@@ -236,7 +236,7 @@ summary{font-size:14px;color:var(--ink2);padding:8px 4px}
    配達ルートアプリ
    データは端末（localStorage）に保存し、スプレッドシートとは Apps Script 経由で裏で同期する
    ========================================================= */
-const VERSION = 'v11';
+const VERSION = 'v12';
 const DWELL_DEFAULT = 6;            // 1件あたりの標準滞在（分）
 const AUTO_DONE_METERS = 250;       // アプリに戻った時、この距離以内なら自動で完了
 const MAX_WP = 25;                  // Routes API で1回に扱える経由地の上限
@@ -642,13 +642,16 @@ function startTrip(){
   t.order.forEach((id, i) => { const st = t.stops.find(s => s.id === id); if (st){ st.plan = i + 1; st.eta0 = e.list[i]; } });
   S.day.active = t.shift; S.showAll = false; save(); render(); window.scrollTo(0, 0);
 }
-const mapsUrl = d => 'https://www.google.com/maps/dir/?api=1&travelmode=driving&dir_action=navigate&destination=' + d.lat + ',' + d.lng;
+/* Googleマップへ渡す行き先。名前と住所で渡すと、マップ側にも名前が出る。
+   駐車位置を登録してある所は、その場所へ正確に案内するために緯度・経度で渡す */
+const destText = p => (p.plat && p.plng) ? p.plat + ',' + p.plng : encodeURIComponent(String(p.name).replace(/\s+/g, ' ') + ' ' + p.addr);
+const mapsUrl = dest => 'https://www.google.com/maps/dir/?api=1&travelmode=driving&dir_action=navigate&destination=' + dest;
 function navTo(dest){
   const t = curTrip();
   settle(t, Date.now());
   if (!t.navAt) t.navAt = Date.now();
   save(); render();
-  location.href = mapsUrl(dest);
+  location.href = mapsUrl(dest);   // dest は destText(p) か「緯度,経度」
 }
 /* 完了にする。記録の確定（滞在時間）は「次へ出発した時」に行う（settle） */
 function complete(auto){
@@ -1219,7 +1222,7 @@ const ACT = {
     to.stops.push(...from.stops.splice(i, 1)); from.order = to.order = null; from.status = to.status = 'plan'; save(); render();
     toast(shiftName(to.shift) + 'の便に移しました');
   },
-  openMap: d => { const p = byId(d.id); if (p){ const c = pt(p); location.href = 'https://www.google.com/maps/search/?api=1&query=' + c.lat + ',' + c.lng; } },
+  openMap: d => { const p = byId(d.id); if (p) location.href = 'https://www.google.com/maps/search/?api=1&query=' + destText(p); },
   confirmOk: () => { const c = S.confirm; S.sheet = null; S.confirm = null; renderSheet(); if (c) c.fn(); },
   delReg: d => {
     const t = S.day.trips[S.shift], i = t.stops.findIndex(s => s.id === d.id); if (i < 0) return;
@@ -1256,8 +1259,8 @@ const ACT = {
   rebuild: () => buildRoute(goShift()),
   edit: () => { S.shift = goShift(); S.view = 'reg'; render(); window.scrollTo(0, 0); },
   start: () => startTrip(),
-  nav: () => { const t = curTrip(), p = byId(t.order[t.idx]); if (p) navTo(pt(p)); },
-  navDepot: () => navTo(S.cfg.depot),
+  nav: () => { const t = curTrip(), p = byId(t.order[t.idx]); if (p) navTo(destText(p)); },
+  navDepot: () => navTo(S.cfg.depot.lat + ',' + S.cfg.depot.lng),
   finish: () => finishTrip(),
   later: () => skipLater(),
   done: () => complete(false),

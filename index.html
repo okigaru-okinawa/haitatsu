@@ -236,7 +236,7 @@ summary{font-size:14px;color:var(--ink2);padding:8px 4px}
    配達ルートアプリ
    データは端末（localStorage）に保存し、スプレッドシートとは Apps Script 経由で裏で同期する
    ========================================================= */
-const VERSION = 'v10';
+const VERSION = 'v11';
 const DWELL_DEFAULT = 6;            // 1件あたりの標準滞在（分）
 const AUTO_DONE_METERS = 250;       // アプリに戻った時、この距離以内なら自動で完了
 const MAX_WP = 25;                  // Routes API で1回に扱える経由地の上限
@@ -874,7 +874,9 @@ function candHtml(){
     ${groups.length > 1 ? `<div class="label"><span>「${esc(g.tok)}」</span></div>` : '<div style="height:8px"></div>'}
     <div class="card">${g.res.length ? g.res.map(p => `
       <div class="cand" data-a="add" data-id="${p.id}" data-tok="${esc(g.tok)}"><div class="grow"><div class="nm">${esc(p.name)} ${(p.visits || usage[p.id]) ? '<span class="chip">前に行った</span>' : ''}</div><div class="ad">${esc(shortAddr(p.addr))}</div></div><span class="plus">${IC.plus}</span></div>`).join('')
-      : `<div class="cand"><div class="grow"><div class="nm">見つかりません</div><div class="ad">リストにない所は、名前と住所で登録できます</div></div><button class="mini" data-a="sheet" data-s="new" data-tok="${esc(g.tok)}">登録する</button></div>`}</div>`).join('');
+      : `<div class="cand"><div class="grow"><div class="nm">リストにはありません</div><div class="ad">Googleマップから探すか、名前と住所で登録できます</div></div><button class="mini" data-a="sheet" data-s="new" data-tok="${esc(g.tok)}">手で登録</button></div>`}
+      ${S.gres && S.gres.tok === g.tok ? (S.gres.list.length ? S.gres.list.map((x, i) => `<div class="cand" data-a="gadd" data-i="${i}"><div class="grow"><div class="nm">${esc(x.name)} <span class="chip green">Googleマップ</span></div><div class="ad">${esc(shortAddr(x.addr))}</div></div><span class="plus">${IC.plus}</span></div>`).join('') : `<div class="cand"><div class="grow"><div class="ad">Googleマップでも見つかりませんでした</div></div></div>`)
+        : `<button class="as-btn" style="font-size:15px;padding:12px;border-top:.5px solid var(--rule)" data-a="gsearch" data-tok="${esc(g.tok)}">「${esc(g.tok)}」をGoogleマップでも探す</button>`}</div>`).join('');
 }
 
 /* ---------- 配達 ---------- */
@@ -1188,6 +1190,22 @@ const ACT = {
     const t = S.day.trips[S.shift];
     addToTrip(t, d.id);
     if (S.view === 'reg' && t.status === 'plan') refreshReg();   // 入力欄は触らない＝キーボードも画面の位置もそのまま
+  },
+  gsearch: async d => {
+    busy('Googleマップで探しています…');
+    try{ const j = await api({ a:'places', q: d.tok + ' 沖縄' }); S.gres = { tok: d.tok, list: j.places || [] }; }
+    catch(e){ toast(e.server && /unknown action/.test(e.message) ? 'スプレッドシート側の更新がまだです' : e.server ? 'Googleマップ検索の設定がまだです（Places API）' : '通信できませんでした'); }
+    busy(false); if (S.view === 'reg') $('#cands').innerHTML = candHtml();
+  },
+  gadd: async d => {
+    const x = S.gres && S.gres.list[Number(d.i)]; if (!x) return;
+    busy('リストに追加中…');
+    try{
+      const j = await api({ a:'add', name: x.name, addr: x.addr, lat: x.lat, lng: x.lng, src: 'Googleマップ' });
+      S.master.push(j.row); saveMaster(); S.gres = null; S.q = ''; busy(false);
+      addToTrip(S.day.trips[S.shift], j.row.id);
+    }catch(e){ busy(false); toast('追加できませんでした'); }
+    render();
   },
   newSave: () => newPharmacy($('#nName').value.trim(), $('#nAddr').value.trim()),
   stop: (d, el) => {

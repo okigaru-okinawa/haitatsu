@@ -46,6 +46,7 @@ function doPost(e) {
       case 'note':   return out_({ ok: true, row: updateNote_(b) });
       case 'visit':  return out_({ ok: true, row: updateVisit_(b) });
       case 'add':    return out_({ ok: true, row: addPharmacy_(b) });
+      case 'places': return out_({ ok: true, places: placesSearch_(b.q) });
       case 'delTrip': return out_({ ok: true, n: deleteRecords_(b.id, null) });
       case 'delStop': return out_({ ok: true, n: deleteRecords_(b.trip, b.id) });
       default:       return out_({ ok: false, error: 'unknown action' });
@@ -179,12 +180,30 @@ function recomputeVisits_(ids) {
   });
 }
 
+/** リストに無い所を Googleマップから探す（沖縄本島とその周りに限定） */
+function placesSearch_(q) {
+  const key = props_().getProperty('API_KEY');
+  const res = UrlFetchApp.fetch('https://places.googleapis.com/v1/places:searchText', {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    headers: { 'X-Goog-Api-Key': key, 'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location' },
+    payload: JSON.stringify({ textQuery: String(q), languageCode: 'ja', regionCode: 'JP', pageSize: 8,
+      locationRestriction: { rectangle: { low: { latitude: 26.0, longitude: 127.2 }, high: { latitude: 27.1, longitude: 128.5 } } } })
+  });
+  const json = JSON.parse(res.getContentText() || '{}');
+  if (res.getResponseCode() !== 200) throw new Error('Places API ' + res.getResponseCode() + ': ' + (json.error && json.error.message));
+  return (json.places || []).map(p => ({
+    name: p.displayName ? p.displayName.text : '',
+    addr: String(p.formattedAddress || '').replace(/^日本、\s*/, '').replace(/〒\d{3}-\d{4}\s*/, ''),
+    lat: p.location.latitude, lng: p.location.longitude
+  }));
+}
+
 /** 新しい薬局を追加（住所から位置を求める） */
 function addPharmacy_(b) {
-  const g = geocode_(b.addr);
+  const g = (b.lat && b.lng) ? { lat: Number(b.lat), lng: Number(b.lng) } : geocode_(b.addr);
   const sh = ss_().getSheetByName(MASTER);
   const id = 'U' + Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyMMddHHmmss');
-  const row = [id, b.name, '', b.addr, b.tel || '', g ? g.lat : '', g ? g.lng : '', '', '', '', '', 0, '', '', '手入力'];
+  const row = [id, b.name, '', b.addr, b.tel || '', g ? g.lat : '', g ? g.lng : '', '', '', '', '', 0, '', '', b.src || '手入力'];
   sh.appendRow(row);
   return { id: id, name: b.name, kana: '', addr: b.addr, tel: b.tel || '', lat: g ? g.lat : null, lng: g ? g.lng : null,
            plat: null, plng: null, tags: '', note: '', visits: 0, avg: null, last: '' };

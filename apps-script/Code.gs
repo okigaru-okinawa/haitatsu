@@ -41,7 +41,7 @@ function doPost(e) {
     const b = JSON.parse(e.postData.contents);
     checkToken_(b.t);
     switch (b.a) {
-      case 'routes': return out_({ ok: true, data: computeRoutes_(b.body) });
+      case 'routes': return out_({ ok: true, data: computeRoutes_(b.body, b.mask) });
       case 'log':    return out_({ ok: true, n: appendLogs_(b.items) });
       case 'note':   return out_({ ok: true, row: updateNote_(b) });
       case 'visit':  return out_({ ok: true, row: updateVisit_(b) });
@@ -78,13 +78,13 @@ function findRow_(sh, id) {
 }
 
 /** Routes API（computeRoutes）を代理で呼ぶ */
-function computeRoutes_(body) {
+function computeRoutes_(body, reqMask) {
   const key = props_().getProperty('API_KEY');
-  const mask = [
+  // 返してもらう項目。アプリ側から指定があればそれを使う（英字・点・カンマのみ許可）
+  const mask = (typeof reqMask === 'string' && /^routes\.[A-Za-z.,]+$/.test(reqMask)) ? reqMask : [
     'routes.optimizedIntermediateWaypointIndex',
-    'routes.duration', 'routes.distanceMeters',
     'routes.legs.duration', 'routes.legs.distanceMeters',
-    'routes.legs.steps.navigationInstruction'
+    'routes.legs.polyline.encodedPolyline'
   ].join(',');
   const res = UrlFetchApp.fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
     method: 'post', contentType: 'application/json', muteHttpExceptions: true,

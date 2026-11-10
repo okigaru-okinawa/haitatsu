@@ -268,7 +268,7 @@ summary{font-size:14px;color:var(--ink2);padding:8px 4px}
    配達ルートアプリ
    データは端末（localStorage）に保存し、スプレッドシートとは Apps Script 経由で裏で同期する
    ========================================================= */
-const VERSION = 'v18';
+const VERSION = 'v19';
 const AUTO_DONE_METERS = 250;       // アプリに戻った時、この距離以内なら自動で完了
 const MAX_WP = 25;                  // Routes API で1回に扱える経由地の上限
 const TAG_LIST = ['裏口','右側','左側','駐車しにくい','駐車場あり','昼休みあり','受付に時間がかかる'];
@@ -1057,16 +1057,11 @@ function vRev(){
     ${trips.map(t => `<div class="label"><span>${shiftName(t.shift)}の便　${hm(t.startAt)} 出発</span><span>${t.stops.filter(s => s.state === 'done').length}件 完了</span></div>
       <div class="card"><div class="sum"><div><small>出発時の予測</small><b>${hm(t.predEnd)}</b></div><div><small>実際</small><b>${t.endAt ? hm(t.endAt) : '<span>配達中</span>'}</b></div><div><small>ルート変更</small><b>${t.changes}<span>回</span></b></div></div>
       ${hist.includes(t) ? `<button class="as-btn danger" style="font-size:15px;padding:12px;border-top:.5px solid var(--rule)" data-a="delTrip" data-id="${esc(t.id)}">この便の記録を消す</button>` : ''}</div>`).join('')}
-    ${all.length ? `<div class="label"><span>回った所のメモ</span><span>タップで書く</span></div>
-      <div class="card">${all.map(({ s, t }) => { const p = byId(s.id) || { name:s.id }; const tg = plainTags(p), key = t.id + '|' + s.id, open = S.revOpen === key; return `
-      <div class="rv ${open ? 'open' : ''}">
-        <div class="rv-h" data-a="revOpen" data-id="${esc(key)}"><div class="grow"><div class="nm">${esc(p.name)}</div>${tg.length || p.note ? `<div>${tg.map(x => `<span class="chip amber" style="margin-right:4px">${esc(x)}</span>`).join('')}${p.note ? '<span class="chip">備考あり</span>' : ''}</div>` : ''}</div>
+    ${all.length ? `<div class="label"><span>回った所</span><span>タップでメモ・納品時間を登録</span></div>
+      <div class="card">${all.map(({ s, t }) => { const p = byId(s.id) || { name:s.id }; const tg = plainTags(p), dw = dwellTag(p), cd = closedDays(p); return `
+      <div class="rv">
+        <div class="rv-h" data-a="stop" data-ctx="rev" data-id="${s.id}" data-trip="${esc(t.id)}"><div class="grow"><div class="nm">${esc(p.name)}</div>${tg.length || p.note || dw || cd.length ? `<div>${tg.map(x => `<span class="chip amber" style="margin-right:4px">${esc(x)}</span>`).join('')}${dw ? `<span class="chip amber" style="margin-right:4px">納品${dw}分</span>` : ''}${cd.length ? `<span class="chip amber" style="margin-right:4px">午後休診 ${cd.join('・')}</span>` : ''}${p.note ? '<span class="chip">備考あり</span>' : ''}</div>` : ''}</div>
           <div class="side">${s.state === 'drop' ? '行かなかった' : (s.dwell != null ? '滞在 約' + s.dwell + '分' : hm(s.doneAt))}</div>${IC.chev}</div>
-        ${open ? `<div class="rv-b">
-          <div class="tags">${TAG_LIST.map(x => `<button class="tag ${tg.includes(x)?'on':''}" data-a="tag" data-tag="${esc(x)}" data-id="${s.id}">${esc(x)}</button>`).join('')}</div>
-          <textarea data-note="${s.id}" placeholder="気づいたこと（マイクで話してもOK）">${esc(p.note||'')}</textarea>
-          <div class="more" style="margin-top:10px"><button class="btn" data-a="park" data-id="${s.id}">${IC.here}${p.plat ? '駐車位置を直す' : '今の場所を駐車位置に'}</button>${hist.includes(t) ? `<button class="btn danger" data-a="delStop" data-id="${s.id}" data-trip="${esc(t.id)}">この記録を消す</button>` : ''}</div>
-        </div>` : ''}
       </div>`; }).join('')}</div>
       <p class="hint">メモは、次にその薬局へ行く時に配達の画面に出ます。記録を消しても、メモは残ります。</p>
       ${hist.length ? `<button class="btn quiet danger" data-a="delDay" style="margin-top:8px">この日の記録をすべて消す</button>` : ''}`
@@ -1136,12 +1131,13 @@ function renderSheet(){
     o.innerHTML = `<div class="sheet-bg" data-a="close"><div class="sheet"><div class="card"><div class="ask"><b>${esc(c.title)}</b>${esc(c.msg)}</div><button class="as-btn danger" data-a="confirmOk">${esc(c.ok)}</button></div><button class="as-btn cancel" data-a="close">キャンセル</button></div></div>`;
   } else if (S.sheet === 'stop'){
     const id = S.stopId, ctx = S.stopCtx, p = byId(id); if (!p){ S.sheet = null; o.innerHTML = ''; return; }
-    const tr = ctx === 'reg' ? S.day.trips[S.shift] : t, st = tr.stops.find(x => x.id === id) || {}, tg = tagsOf(p);
+    const tr = ctx === 'reg' ? S.day.trips[S.shift] : ctx === 'rev' ? ((revDayObj().history || []).find(x => x.id === S.stopTrip) || t) : t, st = tr.stops.find(x => x.id === id) || {}, tg = tagsOf(p);
     const act = (doing, icon, label, sub, danger) => `<button class="opt" data-a="stopAct" data-do="${doing}" data-id="${id}" ${danger ? 'style="color:var(--red)"' : ''}>${danger ? icon.replace('class="ic"','class="ic" style="color:var(--red)"') : icon}<div><b>${label}</b>${sub ? `<span>${sub}</span>` : ''}</div></button>`;
     let acts = '';
     if (ctx === 'reg' && tr.status !== 'run') acts = act('pin', IC.flag, st.pin ? '「最初に行く」をやめる' : '最初に行く', '最短ルートでも、ここを先頭にします') + act('moveOne', IC.up, shiftName(S.shift === 'am' ? 'pm' : 'am') + 'の便に移す') + act('delReg', IC.x, '削除', '', true);
     else if (ctx === 'reg' && st.state !== 'done') acts = act('delRegRun', IC.ban, '今日は行かない', 'この便から外します', true);
     else if (ctx === 'ready') acts = act('delReady', IC.ban, 'この便から外す', '', true);
+    else if (ctx === 'rev' && (revDayObj().history || []).some(x => x.id === S.stopTrip)) acts = `<button class="opt" data-a="delStop" data-id="${id}" data-trip="${esc(S.stopTrip)}" style="color:var(--red)">${IC.x.replace('class="ic"','class="ic" style="color:var(--red)"')}<div><b>この配達の記録を消す</b><span>テストの記録を消す時に。メモは残ります</span></div></button>`;
     else if (ctx === 'run') acts = act('first', IC.up, '次に行く', 'この薬局を次の配達先にします') + act('drop', IC.ban, '今日は行かない', 'この便から外します', true);
     o.innerHTML = wrap(`<h2>${esc(p.name)}</h2><div class="sub">${esc(shortAddr(p.addr))}${p.tel ? '　' + esc(p.tel) : ''}</div>
       <div class="label" style="margin-top:0"><span>メモ（次に行く時、配達の画面に出ます）</span></div>
@@ -1149,7 +1145,7 @@ function renderSheet(){
         <div class="tags">${TAG_LIST.map(x => `<button class="tag ${tg.includes(x)?'on':''}" data-a="tag" data-tag="${esc(x)}" data-id="${id}">${esc(x)}</button>`).join('')}</div>
         <textarea data-note="${id}" placeholder="例：駐車場は建物の裏。受付は2階。検品あり">${esc(p.note||'')}</textarea>
       </div>
-      <div class="label"><span>納品にかかる時間（着いてから車に戻るまで）</span><span>${dwellTag(p) ? '' : (p.avg && (p.visits||0) >= 2 ? 'これまでの平均 約' + Math.round(p.avg) + '分' : '基本 ' + (S.cfg.dwell || 3) + '分')}</span></div>
+      <div class="label"><span>納品にかかる時間（着いてから車に戻るまで）</span><span>${st.dwell != null && ctx === 'rev' ? '今回は約' + st.dwell + '分　' : ''}${dwellTag(p) ? '' : (p.avg && (p.visits||0) >= 2 ? 'これまでの平均 約' + Math.round(p.avg) + '分' : '基本 ' + (S.cfg.dwell || 3) + '分')}</span></div>
       <div class="card pad"><div class="pick">${DWELL_CHOICES.map(n => `<button class="tag ${dwellTag(p) === n ? 'on' : ''}" data-a="dwellSet" data-n="${n}" data-id="${id}">${n}分</button>`).join('')}</div></div>
       <div class="label"><span>午後が休診の曜日</span><span>その日の午後に行く時、赤く知らせます</span></div>
       <div class="card pad"><div class="pick">${DAYS.map(d => `<button class="tag ${closedDays(p).includes(d) ? 'on' : ''}" data-a="tag" data-tag="午後休:${d}" data-id="${id}">${d}</button>`).join('')}</div></div>
@@ -1311,7 +1307,7 @@ const ACT = {
   newHere: () => newPharmacy($('#nName').value.trim(), $('#nAddr').value.trim(), true),
   stop: (d, el) => {
     if (el && el.closest('.srow.open')){ closeSwipes(); return; }
-    S.stopId = d.id; S.stopCtx = d.ctx === 'cur' ? 'none' : d.ctx; S.sheet = 'stop'; renderSheet();
+    S.stopId = d.id; S.stopTrip = d.trip || null; S.stopCtx = d.ctx === 'cur' ? 'none' : d.ctx; S.sheet = 'stop'; renderSheet();
   },
   stopAct: d => { S.sheet = null; ACT[d.do]({ id: d.id }); },
   moveOne: d => {

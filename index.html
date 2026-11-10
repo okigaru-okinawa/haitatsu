@@ -72,6 +72,10 @@ main{padding:10px 16px 0;max-width:560px;margin:0 auto}
 .search input::placeholder{color:var(--ink3);font-size:16px}
 .clear{border:0;background:var(--rule);color:var(--ink2);width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin-right:6px}
 .clear svg{width:14px;height:14px;color:inherit}
+.quick{display:flex;gap:8px;overflow-x:auto;padding:10px 2px 2px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.quick::-webkit-scrollbar{display:none}
+.quick button{flex:none;border:0;background:var(--card);border-radius:999px;padding:8px 14px 8px 10px;font-size:15px;font-weight:600;display:flex;align-items:center;gap:4px;white-space:nowrap}
+.quick svg{width:16px;height:16px;color:var(--blue)}
 .cand{display:flex;align-items:center;gap:12px;padding:12px 14px 12px 16px;border-top:1px solid var(--rule)}
 .cand:first-child{border-top:0}
 .cand .nm{font-weight:700;line-height:1.35}
@@ -204,7 +208,7 @@ summary{font-size:14px;color:var(--ink2);padding:8px 4px}
    配達ルートアプリ
    データは端末（localStorage）に保存し、スプレッドシートとは Apps Script 経由で裏で同期する
    ========================================================= */
-const VERSION = 'v5';
+const VERSION = 'v6';
 const DWELL_DEFAULT = 6;            // 1件あたりの標準滞在（分）
 const AUTO_DONE_METERS = 250;       // アプリに戻った時、この距離以内なら自動で完了
 const MAX_WP = 25;                  // Routes API で1回に扱える経由地の上限
@@ -333,30 +337,47 @@ async function flush(){
 window.addEventListener('online', flush);
 
 /* ---------- 検索 ---------- */
+/* ひらがな・カタカナ・漢字・住所・電話のどれでも探せるようにする。変換前のひらがなでも当たるよう、読みを併せ持つ */
 const kata = s => s.replace(/[ぁ-ゖ]/g, c => String.fromCharCode(c.charCodeAt(0) + 0x60));
-const norm = s => kata(String(s||'').normalize('NFKC')).replace(/[\s・\-ー－（）()]/g,'').toLowerCase();
-const NORM = new WeakMap();
-function keys(p){ let k = NORM.get(p); if (!k){ k = { n:norm(p.name), k:norm(p.kana), a:norm(p.addr), t:String(p.tel||'').replace(/\D/g,'') }; NORM.set(p, k); } return k; }
+const norm = s => kata(String(s||'').normalize('NFKC')).replace(/[\s・\-ー－―（）()「」、。,.]/g,'').replace(/ヶ/g,'ケ').replace(/髙/g,'高').replace(/﨑/g,'崎').replace(/藥/g,'薬').toLowerCase();
+const slim = s => s.replace(/薬局|調剤|ヤツキヨク|ヤッキョク|チョウザイ|店$|テン$/g, '');
+let NORM = new WeakMap(), YOMI = LS.get('yomi', {});
+function keys(p){
+  let k = NORM.get(p);
+  if (!k){
+    const y = String(YOMI[p.id] || ''), yn = y.includes('|') ? y.split('|')[0] : '', ya = y.includes('|') ? y.split('|')[1] : y;
+    const n = norm(p.name), kn = norm(p.kana) || norm(yn);
+    k = { names: [n, slim(n), kn, slim(kn)].filter(Boolean), addr: norm(p.addr) + '|' + norm(ya), tel: String(p.tel||'').replace(/\D/g,'') };
+    NORM.set(p, k);
+  }
+  return k;
+}
+function scoreTerm(k, raw){
+  const q = slim(norm(raw)) || norm(raw);
+  const digits = String(raw).normalize('NFKC').replace(/\D/g,'');
+  let sc = 0;
+  if (q){
+    if (k.names.some(x => x.startsWith(q))) sc = 100;
+    else if (k.names.some(x => x.includes(q))) sc = 60;
+    else if (q.length >= 2 && k.addr.includes(q)) sc = 25;
+  }
+  if (digits.length >= 4 && k.tel.includes(digits)) sc = Math.max(sc, 90);
+  return sc;
+}
+/* 空白で区切った言葉は「全部に当てはまる薬局」を探す（例：とまと うらそえ） */
 function searchOne(raw){
-  const q = norm(raw).replace(/(薬局|ヤッキョク)$/,'');
-  const digits = String(raw||'').normalize('NFKC').replace(/\D/g,'');
-  if (!q && digits.length < 4) return [];
+  const terms = String(raw||'').trim().split(/\s+/).filter(Boolean);
+  if (!terms.length) return [];
   const usage = LS.get('usage', {});
   const res = [];
   for (const p of S.master){
     const k = keys(p);
-    let sc = 0;
-    if (q){
-      if (k.n.startsWith(q) || k.k.startsWith(q)) sc = 100;
-      else if (k.n.includes(q) || k.k.includes(q)) sc = 60;
-      else if (q.length >= 2 && k.a.includes(q)) sc = 20;
-    }
-    if (digits.length >= 4 && k.t.includes(digits)) sc = Math.max(sc, 90);
-    if (!sc) continue;
-    sc += Math.min(40, (usage[p.id]||0) * 8) + Math.min(10, p.visits||0);
-    res.push([sc, p]);
+    let sum = 0, ok = true;
+    for (const t of terms){ const sc = scoreTerm(k, t); if (!sc){ ok = false; break; } sum += sc; }
+    if (!ok) continue;
+    res.push([sum / terms.length + Math.min(40, (usage[p.id]||0) * 8) + Math.min(10, p.visits||0), p]);
   }
-  return res.sort((a,b) => b[0]-a[0]).slice(0, 6).map(x => x[1]);
+  return res.sort((a,b) => b[0]-a[0]).slice(0, 8).map(x => x[1]);
 }
 /* 「、」や空白で区切って複数まとめて探す（音声入力向け） */
 function tokens(q){
@@ -762,27 +783,32 @@ function vReg(){
   $('#main').innerHTML = title('今日の配達', dateLabel(S.day.date)) + `
     <div class="label" style="margin-top:0"><span>どちらの便に入れますか</span></div>
     <div class="shift">${['am','pm'].map(k => `<button data-a="shift" data-s="${k}" class="${S.shift===k?'on':''}" aria-pressed="${S.shift===k}"><span class="dot">${IC.check}</span><b>${shiftName(k)}の便</b><span class="n">${cnt(k)}<small>件</small></span></button>`).join('')}</div>
-    <div class="search">${IC.search}<input id="q" placeholder="薬局名・電話番号で探す" value="${esc(S.q)}" autocomplete="off" autocorrect="off" enterkeyhint="search"><button class="clear" data-a="clearQ" aria-label="消す" ${S.q ? '' : 'hidden'}>${IC.x}</button></div>
+    <div class="search">${IC.search}<input id="q" placeholder="薬局名・住所・電話番号で探す" value="${esc(S.q)}" autocomplete="off" autocorrect="off" enterkeyhint="search"><button class="clear" data-a="clearQ" aria-label="消す" ${S.q ? '' : 'hidden'}>${IC.x}</button></div>
     <div id="cands">${candHtml()}</div>
     ${stops.length ? `
       <div class="label"><span>${shiftName(S.shift)}の配達先</span><span>${stops.length}件</span></div>
       <div class="card noline" data-sort="${running ? '' : 'reg'}">${stops.map((s, i) => { const p = byId(s.id) || { name:s.id, addr:'' }; const done = s.state === 'done';
         return stopRow({ id:s.id, num: done ? IC.check : i + 1, cls: done ? 'done' : '', name:p.name, addr:shortAddr(p.addr),
-          extra: s.pin ? ' <span class="chip amber">最初に行く</span>' : '',
+          extra: done ? ' <span class="chip green">完了</span>' : s.pin ? ' <span class="chip amber">最初に行く</span>' : '',
           flag: running ? '' : `<button class="flag ${s.pin?'on':''}" data-a="pin" data-id="${s.id}" aria-label="最初に行く">${IC.flag}</button>`,
-          del: running ? null : { a:'delReg', label:'削除' }, drag: !running }); }).join('')}</div>
-      ${running ? '<p class="hint">配達中です。ここで追加すると、ルートに入れて組み直します。</p>'
+          del: done ? null : running ? { a:'delRegRun', label:'外す' } : { a:'delReg', label:'削除' }, drag: !running }); }).join('')}</div>
+      ${running ? '<p class="hint">この便は配達中です。追加するとルートに入り、左にスワイプすると外せます。最初からやり直す時は下の「この便をやめる」。</p>'
                 : '<p class="hint">左にスワイプで削除、長押しで並べ替え。旗は「最初に行く」の印です。</p>'}`
     : `<div class="empty"><b>伝票の薬局を入れていこう</b>上の検索に名前を入れると候補が出ます。<br>マイクで「とまと薬局、大城薬局」と続けて言っても大丈夫。</div>`}
     ${!S.master.length ? `<div class="memo">薬局リストがまだありません。「設定」で設定リンクを読み込んでください。</div>` : ''}`;
-  setBar(running ? `<button class="btn primary" data-a="tab" data-v="go">配達の画面へ</button>`
-       : stops.length ? `<button class="btn primary" data-a="build">最短ルートを作る</button><div class="more"><button class="btn" data-a="buildFixed">この順番で行く</button>${cnt(S.shift === 'am' ? 'pm' : 'am') || stops.length ? `<button class="btn" data-a="move">${shiftName(S.shift==='am'?'pm':'am')}に移す</button>` : ''}</div>` : '');
+  setBar(running ? `<button class="btn primary" data-a="tab" data-v="go">配達の画面へ</button><div class="more"><button class="btn danger" data-a="cancelTrip">この便をやめる</button></div>`
+       : stops.length ? `<button class="btn primary" data-a="build">最短ルートを作る</button><div class="more"><button class="btn" data-a="buildFixed">この順番で行く</button><button class="btn" data-a="move">${shiftName(S.shift==='am'?'pm':'am')}に移す</button><button class="btn danger" data-a="clearAll">すべて消す</button></div>` : '');
   const q = $('#q');
   q.oninput = () => { S.q = q.value; $('#cands').innerHTML = candHtml(); $('.clear').hidden = !S.q; };
 }
 function candHtml(){
   const groups = tokens(S.q).map(tok => ({ tok, res: searchOne(tok) }));
   const usage = LS.get('usage', {});
+  if (!S.q.trim()){
+    const have = new Set(['am','pm'].flatMap(k => live(S.day.trips[k]).map(s => s.id)));
+    const top = Object.entries(usage).filter(([id]) => !have.has(id) && byId(id)).sort((a, b) => b[1] - a[1]).slice(0, 8);
+    return top.length ? `<div class="quick">${top.map(([id]) => `<button data-a="add" data-id="${id}">${IC.plus}${esc(byId(id).name)}</button>`).join('')}</div>` : '';
+  }
   return groups.map(g => `
     ${groups.length > 1 ? `<div class="label"><span>「${esc(g.tok)}」</span></div>` : '<div style="height:8px"></div>'}
     <div class="card">${g.res.length ? g.res.map(p => `
@@ -932,6 +958,7 @@ function renderSheet(){
       ${cur ? `<button class="opt" data-a="done">${IC.check}<div><b>${esc(cur.name)} を完了にする</b><span>ナビを使わずに配達した時</span></div></button>
       <button class="opt" data-a="drop" data-id="${cur.id}">${IC.ban}<div><b>${esc(cur.name)} は今日行かない</b><span>リストから外します</span></div></button>` : ''}
       <button class="opt" data-a="toggleMap">${IC.nav}<div><b>${S.showMap ? '地図を閉じる' : '地図を見る'}</b><span>残りの配達先を地図で確認</span></div></button>
+      <button class="opt" data-a="cancelTrip" style="color:var(--red)">${IC.x.replace('class="ic"','class="ic" style="color:var(--red)"')}<div><b>この便をやめる</b><span>登録の画面に戻って、やり直します</span></div></button>
     </div>`);
   } else if (S.sheet === 'first'){
     o.innerHTML = wrap(`<h2>先に行く薬局を選ぶ</h2><div class="card noline">${t.order.slice(t.idx).map((id, i) => `<div data-a="first" data-id="${id}">${stopRow({ num: t.idx + i + 1, name: byId(id)?.name || id })}</div>`).join('')}</div>`);
@@ -1048,6 +1075,21 @@ const ACT = {
     save(); buildRoute(t.shift, ids);
   },
   delRun: d => dropStop(d.id),
+  delRegRun: d => { S.day.active = S.shift; dropStop(d.id); },
+  clearAll: () => {
+    const t = S.day.trips[S.shift], keep = t.stops.slice(); if (!keep.length) return;
+    Object.assign(t, { stops: [], order: null, status: 'plan' }); save(); render();
+    toast(keep.length + '件を消しました', { label:'元に戻す', fn: () => { t.stops = keep; save(); render(); } });
+  },
+  cancelTrip: () => {
+    const t = S.day.trips[S.day.active || S.shift];
+    if (t.status !== 'run' && t.status !== 'ready') return;
+    if (!confirm('この便をやめて、登録からやり直しますか？\n（配達先のリストは残ります）')) return;
+    if (t.status === 'run') logChange('便をやめた', '', null);
+    t.stops = live(t); t.stops.forEach(s => Object.assign(s, { state:'todo', doneAt:null, seq:null, arrAt:null, dwell:null }));
+    Object.assign(t, { status:'plan', order:null, legs:null, legBase:0, idx:0, navAt:null, pending:null, startAt:null, manual:false, changes:0 });
+    S.shift = t.shift; S.day.active = null; S.sheet = null; S.view = 'reg'; save(); render(); window.scrollTo(0, 0);
+  },
   pin: d => { const t = S.day.trips[S.shift], s = t.stops.find(s => s.id === d.id); s.pin = !s.pin; t.order = null; t.status = 'plan'; save(); render(); },
   move: () => { const from = S.day.trips[S.shift], to = S.day.trips[S.shift === 'am' ? 'pm' : 'am']; if (to.status === 'run'){ toast('配達中の便には移せません'); return; } to.stops.push(...from.stops); from.stops = []; from.order = to.order = null; from.status = to.status = 'plan'; S.shift = to.shift; save(); render(); },
   build: () => buildRoute(S.shift),
@@ -1125,6 +1167,7 @@ keepSetupInUrl();
 if (!S.cfg.url) S.view = 'set';
 if (S.day.active && S.day.trips[S.day.active].status === 'run') S.view = 'go';
 render();
+fetch('yomi.json').then(r => r.json()).then(j => { YOMI = j; LS.set('yomi', j); NORM = new WeakMap(); }).catch(() => {});
 if (S.cfg.url && (!S.master.length || Date.now() - LS.get('masterAt', 0) > 6*3600*1000)) loadMaster(true);
 onReturn();
 </script>

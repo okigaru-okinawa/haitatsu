@@ -72,6 +72,8 @@ main{padding:10px 16px 0;max-width:560px;margin:0 auto}
 .search input::placeholder{color:var(--ink3);font-size:16px}
 .clear{border:0;background:var(--rule);color:var(--ink2);width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin-right:6px}
 .clear svg{width:14px;height:14px;color:inherit}
+.newlink{display:flex;align-items:center;gap:6px;border:0;background:transparent;color:var(--blue);font-size:15px;font-weight:600;padding:12px 4px 4px}
+.newlink svg{width:18px;height:18px}
 .quick{display:flex;gap:8px;overflow-x:auto;padding:10px 2px 2px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
 .quick::-webkit-scrollbar{display:none}
 .quick button{flex:none;border:0;background:var(--card);border-radius:999px;padding:8px 14px 8px 10px;font-size:15px;font-weight:600;display:flex;align-items:center;gap:4px;white-space:nowrap}
@@ -264,7 +266,7 @@ summary{font-size:14px;color:var(--ink2);padding:8px 4px}
    配達ルートアプリ
    データは端末（localStorage）に保存し、スプレッドシートとは Apps Script 経由で裏で同期する
    ========================================================= */
-const VERSION = 'v16';
+const VERSION = 'v17';
 const AUTO_DONE_METERS = 250;       // アプリに戻った時、この距離以内なら自動で完了
 const MAX_WP = 25;                  // Routes API で1回に扱える経由地の上限
 const TAG_LIST = ['裏口','右側','左側','駐車しにくい','駐車場あり','昼休みあり','受付に時間がかかる'];
@@ -936,7 +938,8 @@ function candHtml(){
   if (!S.q.trim()){
     const have = new Set(['am','pm'].flatMap(k => live(S.day.trips[k]).map(s => s.id)));
     const top = Object.entries(usage).filter(([id]) => !have.has(id) && byId(id)).sort((a, b) => b[1] - a[1]).slice(0, 8);
-    return top.length ? `<div class="quick">${top.map(([id]) => `<button data-a="add" data-id="${id}">${IC.plus}${esc(byId(id).name)}</button>`).join('')}</div>` : '';
+    return (top.length ? `<div class="quick">${top.map(([id]) => `<button data-a="add" data-id="${id}">${IC.plus}${esc(byId(id).name)}</button>`).join('')}</div>` : '')
+      + `<button class="newlink" data-a="sheet" data-s="new">${IC.plus}リストにない所を登録する（名前と住所）</button>`;
   }
   const groups = tokens(S.q).map(tok => ({ tok, res: searchOne(tok) }));
   return groups.map(g => `
@@ -945,7 +948,8 @@ function candHtml(){
       <div class="cand" data-a="add" data-id="${p.id}" data-tok="${esc(g.tok)}"><div class="grow"><div class="nm">${esc(p.name)} ${(p.visits || usage[p.id]) ? '<span class="chip">前に行った</span>' : ''}</div><div class="ad">${esc(shortAddr(p.addr))}</div></div><span class="plus">${IC.plus}</span></div>`).join('')
       : `<div class="cand"><div class="grow"><div class="nm">リストにはありません</div><div class="ad">Googleマップから探すか、名前と住所で登録できます</div></div><button class="mini" data-a="sheet" data-s="new" data-tok="${esc(g.tok)}">手で登録</button></div>`}
       ${S.gres && S.gres.tok === g.tok ? (S.gres.list.length ? S.gres.list.map((x, i) => `<div class="cand" data-a="gadd" data-i="${i}"><div class="grow"><div class="nm">${esc(x.name)} <span class="chip green">Googleマップ</span></div><div class="ad">${esc(shortAddr(x.addr))}</div></div><span class="plus">${IC.plus}</span></div>`).join('') : `<div class="cand"><div class="grow"><div class="ad">Googleマップでも見つかりませんでした</div></div></div>`)
-        : `<button class="as-btn" style="font-size:15px;padding:12px;border-top:.5px solid var(--rule)" data-a="gsearch" data-tok="${esc(g.tok)}">「${esc(g.tok)}」をGoogleマップでも探す</button>`}</div>`).join('');
+        : `<button class="as-btn" style="font-size:15px;padding:12px;border-top:.5px solid var(--rule)" data-a="gsearch" data-tok="${esc(g.tok)}">「${esc(g.tok)}」をGoogleマップでも探す</button>`}
+      ${g.res.length ? `<button class="as-btn" style="font-size:15px;padding:12px;border-top:.5px solid var(--rule)" data-a="sheet" data-s="new" data-tok="${esc(g.tok)}">名前と住所を入れて登録する</button>` : ''}</div>`).join('');
 }
 
 /* ---------- 配達 ---------- */
@@ -1151,7 +1155,9 @@ function renderSheet(){
   } else if (S.sheet === 'new'){
     o.innerHTML = wrap(`<h2>新しい配達先を登録</h2><div class="sub">伝票の名前と住所をそのまま入れてください</div>
       <div class="card pad"><input class="field" id="nName" placeholder="名前（薬局・病院・クリニックなど）" value="${esc(S.newName || '')}" autocomplete="off"><div style="height:8px"></div><input class="field" id="nAddr" placeholder="住所（例：沖縄県浦添市城間1-2-3）" value="沖縄県" autocomplete="off"></div>
-      <div style="height:10px"></div><button class="btn primary" data-a="newSave" style="min-height:54px;font-size:18px">登録して追加</button><div style="height:8px"></div>`);
+      <div style="height:10px"></div><button class="btn primary" data-a="newSave" style="min-height:54px;font-size:18px">登録して追加</button>
+      <div style="height:8px"></div><button class="btn" data-a="newHere">${IC.here}住所のかわりに、今いる場所で登録</button>
+      <p class="hint">その場所の前にいる時は、名前だけ入れて「今いる場所で登録」が早いです。</p><div style="height:8px"></div>`);
   } else if (S.sheet === 'change'){
     const cur = byId(t.order[t.idx]);
     o.innerHTML = wrap(`<h2>その他</h2><div class="card">
@@ -1183,11 +1189,14 @@ function renderSheet(){
 }
 
 /* 新しい薬局をリストに登録 */
-async function newPharmacy(nm, addr){
-  if (!nm || !addr || addr === '沖縄県'){ toast('名前と住所を入れてください'); return; }
+async function newPharmacy(nm, addr, useHere){
+  if (!nm){ toast('名前を入れてください'); return; }
+  if (!useHere && (!addr || addr === '沖縄県')){ toast('住所を入れるか、「今いる場所で登録」を押してください'); return; }
+  let pos = null;
+  if (useHere){ busy('現在地を取得中…'); try{ pos = await here(); }catch(e){ busy(false); toast(e.message); return; } }
   S.sheet = null; busy('登録中…');
   try{
-    const j = await api({ a:'add', name:nm, addr });
+    const j = await api(pos ? { a:'add', name:nm, addr: (addr && addr !== '沖縄県') ? addr : '', lat:pos.lat, lng:pos.lng, src:'手入力(現在地)' } : { a:'add', name:nm, addr });
     S.master.push(j.row); saveMaster();
     if (!j.row.lat) toast('住所から場所が分かりませんでした。住所を確かめてね');
     S.q = ''; busy(false); addToTrip(S.day.trips[S.shift], j.row.id);
@@ -1292,7 +1301,8 @@ const ACT = {
     }catch(e){ busy(false); toast('追加できませんでした'); }
     render();
   },
-  newSave: () => newPharmacy($('#nName').value.trim(), $('#nAddr').value.trim()),
+  newSave: () => newPharmacy($('#nName').value.trim(), $('#nAddr').value.trim(), false),
+  newHere: () => newPharmacy($('#nName').value.trim(), $('#nAddr').value.trim(), true),
   stop: (d, el) => {
     if (el && el.closest('.srow.open')){ closeSwipes(); return; }
     S.stopId = d.id; S.stopCtx = d.ctx === 'cur' ? 'none' : d.ctx; S.sheet = 'stop'; renderSheet();

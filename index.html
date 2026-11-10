@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ja">
+<html lang="ja" data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
@@ -7,8 +7,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="配達ルート">
-<meta name="theme-color" content="#F3F5F1" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0D1217" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" id="themeColor" content="#F3F5F1">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="manifest" href="manifest.json">
 <title>配達ルート</title>
@@ -19,7 +18,12 @@
   --green:#0E8A5F;--green-soft:#DDF2E9;--amber:#8A5300;--amber-soft:#FFF1CF;--red:#D93A2B;
   --tab:58px;--num:"DIN Alternate","Avenir Next Condensed","Helvetica Neue",system-ui,sans-serif;
 }
-@media (prefers-color-scheme:dark){:root{
+html[data-theme=dark]{
+  --paper:#0D1217;--card:#171E26;--ink:#F2F5F7;--ink2:#A7B1BB;--ink3:#6C7782;--rule:#27313B;
+  --blue:#2F86DD;--blue-deep:#1B5FA8;--blue-soft:#12304D;--on-blue:#FFFFFF;
+  --green:#3CC08F;--green-soft:#103527;--amber:#F5C04E;--amber-soft:#3A2C0B;--red:#FF6B5C;
+}
+@media (prefers-color-scheme:dark){html[data-theme=auto]{
   --paper:#0D1217;--card:#171E26;--ink:#F2F5F7;--ink2:#A7B1BB;--ink3:#6C7782;--rule:#27313B;
   --blue:#2F86DD;--blue-deep:#1B5FA8;--blue-soft:#12304D;--on-blue:#FFFFFF;
   --green:#3CC08F;--green-soft:#103527;--amber:#F5C04E;--amber-soft:#3A2C0B;--red:#FF6B5C;
@@ -47,7 +51,18 @@ main{padding:10px 16px 0;max-width:560px;margin:0 auto}
 .seg{display:grid;grid-template-columns:1fr 1fr;background:var(--rule);border-radius:12px;padding:3px;gap:3px;margin-bottom:12px}
 .seg button{border:0;background:transparent;border-radius:9px;padding:9px 4px;font-size:15px;color:var(--ink2)}
 .seg button.on{background:var(--card);color:var(--ink);font-weight:700}
-.seg .n{font-size:16px;margin-left:4px}
+.seg.three{grid-template-columns:1fr 1fr 1fr}
+.shift{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.shift button{border:2px solid var(--rule);background:var(--card);border-radius:14px;padding:10px 14px;text-align:left;display:flex;align-items:center;gap:8px;color:var(--ink2)}
+.shift button b{font-size:18px;font-weight:800;color:var(--ink)}
+.shift button .n{font-size:20px;font-weight:700;margin-left:auto}
+.shift button small{font-size:12px}
+.shift button.on{background:var(--blue);border-color:var(--blue);color:var(--on-blue)}
+.shift button.on b{color:var(--on-blue)}
+.shift .dot{width:20px;height:20px;border-radius:50%;border:2px solid var(--ink3);flex:none;display:flex;align-items:center;justify-content:center}
+.shift .on .dot{border-color:var(--on-blue);background:var(--on-blue);color:var(--blue)}
+.shift .dot svg{width:14px;height:14px;stroke-width:3;display:none}
+.shift .on .dot svg{display:block}
 
 /* 検索 */
 .search{display:flex;align-items:center;gap:8px;background:var(--card);border-radius:14px;padding:0 6px 0 14px;height:54px;border:2px solid transparent}
@@ -189,7 +204,7 @@ summary{font-size:14px;color:var(--ink2);padding:8px 4px}
    配達ルートアプリ
    データは端末（localStorage）に保存し、スプレッドシートとは Apps Script 経由で裏で同期する
    ========================================================= */
-const VERSION = 'v4';
+const VERSION = 'v5';
 const DWELL_DEFAULT = 6;            // 1件あたりの標準滞在（分）
 const AUTO_DONE_METERS = 250;       // アプリに戻った時、この距離以内なら自動で完了
 const MAX_WP = 25;                  // Routes API で1回に扱える経由地の上限
@@ -232,6 +247,8 @@ const S = {
 };
 if (!S.day.history) S.day.history = [];
 ['am','pm'].forEach(k => { const t = S.day.trips[k]; if (t.status === 'done'){ t.legs = null; S.day.history.push(t); S.day.trips[k] = newTrip(k); if (S.day.active === k) S.day.active = null; } });   // 前の版のデータを引き継ぐ
+function applyTheme(){ const th = S.cfg.theme || 'light'; document.documentElement.dataset.theme = th; const dark = th === 'dark' || (th === 'auto' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches); const m = document.getElementById('themeColor'); if (m) m.content = dark ? '#0D1217' : '#F3F5F1'; }
+applyTheme();
 let flushing = false, returning = false, IDX = null, mapObj = null, mapSeq = 0, leaflet = null, sorters = [], sorting = false, swipedAt = 0;
 const save = () => { LS.set('day', S.day); LS.set('cfg', S.cfg); };
 const saveMaster = () => { IDX = null; LS.set('master', S.master); };
@@ -743,10 +760,8 @@ function vReg(){
   const t = S.day.trips[S.shift], running = t.status === 'run', stops = live(t);
   const cnt = k => live(S.day.trips[k]).length;
   $('#main').innerHTML = title('今日の配達', dateLabel(S.day.date)) + `
-    <div class="seg">
-      <button data-a="shift" data-s="am" class="${S.shift==='am'?'on':''}">午前<span class="n">${cnt('am')}</span></button>
-      <button data-a="shift" data-s="pm" class="${S.shift==='pm'?'on':''}">午後<span class="n">${cnt('pm')}</span></button>
-    </div>
+    <div class="label" style="margin-top:0"><span>どちらの便に入れますか</span></div>
+    <div class="shift">${['am','pm'].map(k => `<button data-a="shift" data-s="${k}" class="${S.shift===k?'on':''}" aria-pressed="${S.shift===k}"><span class="dot">${IC.check}</span><b>${shiftName(k)}の便</b><span class="n">${cnt(k)}<small>件</small></span></button>`).join('')}</div>
     <div class="search">${IC.search}<input id="q" placeholder="薬局名・電話番号で探す" value="${esc(S.q)}" autocomplete="off" autocorrect="off" enterkeyhint="search"><button class="clear" data-a="clearQ" aria-label="消す" ${S.q ? '' : 'hidden'}>${IC.x}</button></div>
     <div id="cands">${candHtml()}</div>
     ${stops.length ? `
@@ -882,6 +897,8 @@ function vSet(){
       <div class="set"><div class="grow"><div class="k">薬局リスト <span class="n">${S.master.length}</span>件</div><div class="v">${at ? new Date(at).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',month:'numeric',day:'numeric',hour:'numeric',minute:'2-digit'}) + ' に更新' : 'まだ読み込んでいません'}</div></div><button class="mini" data-a="reload">更新</button></div>
       <div class="set"><div class="grow"><div class="k">記録の送信</div><div class="v">${S.queue.length ? '未送信が' + S.queue.length + '件あります' : 'すべて保存済み'}</div></div>${S.queue.length ? `<button class="mini" data-a="flushNow">今すぐ送る</button>` : ''}</div>
     </div>
+    <div class="label"><span>画面の色</span></div>
+    <div class="seg three">${[['light','明るい'],['dark','暗い'],['auto','自動']].map(([k,l]) => `<button data-a="theme" data-th="${k}" class="${(S.cfg.theme||'light')===k?'on':''}">${l}</button>`).join('')}</div>
     <div class="label"><span>ホーム画面のアプリに設定を移す</span></div>
     <div class="card pad">
       <input class="field" id="cLink" placeholder="設定リンクを貼り付け" autocomplete="off">
@@ -1065,6 +1082,7 @@ const ACT = {
     catch(e){ toast(e.message); }
   },
   setDepot: async () => { busy('現在地を取得中…'); try{ S.cfg.depot = await here(); save(); keepSetupInUrl(); toast('営業所を登録しました'); }catch(e){ toast(e.message); } busy(false); render(); },
+  theme: d => { S.cfg.theme = d.th; save(); applyTheme(); render(); },
   reload: () => loadMaster(false),
   flushNow: () => { toast('送信しています'); flush().then(() => { if (S.view === 'set') render(); }); },
   resetDay: () => { if (confirm('今日の配達を全部消しますか？（スプレッドシートの記録は残ります）')){ S.day = newDay(); save(); S.view = 'reg'; render(); } },

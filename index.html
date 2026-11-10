@@ -7,30 +7,30 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="配達ルート">
-<meta name="theme-color" id="themeColor" content="#F3F5F1">
+<meta name="theme-color" id="themeColor" content="#F2F2F7">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="manifest" href="manifest.json">
 <title>配達ルート</title>
 <style>
 :root{
-  --paper:#F3F5F1;--card:#FFFFFF;--ink:#101820;--ink2:#55606B;--ink3:#8E98A2;--rule:#E1E5DF;
-  --blue:#0A5FB4;--blue-deep:#084C91;--blue-soft:#E3EEF9;--on-blue:#FFFFFF;
-  --green:#0E8A5F;--green-soft:#DDF2E9;--amber:#8A5300;--amber-soft:#FFF1CF;--red:#D93A2B;
+  --paper:#F2F2F7;--card:#FFFFFF;--ink:#000000;--ink2:#636366;--ink3:#A1A1A6;--rule:#E3E3E8;
+  --blue:#007AFF;--blue-deep:#0062CC;--blue-soft:#E5F1FF;--on-blue:#FFFFFF;
+  --green:#248A3D;--green-soft:#E3F6E8;--amber:#8A5300;--amber-soft:#FFF4D6;--red:#FF3B30;--bar:rgba(249,249,249,.88);
   --tab:58px;--num:"DIN Alternate","Avenir Next Condensed","Helvetica Neue",system-ui,sans-serif;
 }
 html[data-theme=dark]{
-  --paper:#0D1217;--card:#171E26;--ink:#F2F5F7;--ink2:#A7B1BB;--ink3:#6C7782;--rule:#27313B;
-  --blue:#2F86DD;--blue-deep:#1B5FA8;--blue-soft:#12304D;--on-blue:#FFFFFF;
-  --green:#3CC08F;--green-soft:#103527;--amber:#F5C04E;--amber-soft:#3A2C0B;--red:#FF6B5C;
+  --paper:#000000;--card:#1C1C1E;--ink:#FFFFFF;--ink2:#AEAEB2;--ink3:#636366;--rule:#2C2C2E;
+  --blue:#0A84FF;--blue-deep:#0060DF;--blue-soft:#0A2A4D;--on-blue:#FFFFFF;
+  --green:#30B050;--green-soft:#0F2E18;--amber:#FFD60A;--amber-soft:#3A2F00;--red:#FF453A;--bar:rgba(28,28,30,.88);
 }
 @media (prefers-color-scheme:dark){html[data-theme=auto]{
-  --paper:#0D1217;--card:#171E26;--ink:#F2F5F7;--ink2:#A7B1BB;--ink3:#6C7782;--rule:#27313B;
-  --blue:#2F86DD;--blue-deep:#1B5FA8;--blue-soft:#12304D;--on-blue:#FFFFFF;
-  --green:#3CC08F;--green-soft:#103527;--amber:#F5C04E;--amber-soft:#3A2C0B;--red:#FF6B5C;
+  --paper:#000000;--card:#1C1C1E;--ink:#FFFFFF;--ink2:#AEAEB2;--ink3:#636366;--rule:#2C2C2E;
+  --blue:#0A84FF;--blue-deep:#0060DF;--blue-soft:#0A2A4D;--on-blue:#FFFFFF;
+  --green:#30B050;--green-soft:#0F2E18;--amber:#FFD60A;--amber-soft:#3A2F00;--red:#FF453A;--bar:rgba(28,28,30,.88);
 }}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;background:var(--paper);color:var(--ink);font:17px/1.5 -apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;-webkit-text-size-adjust:100%}
-body{padding:env(safe-area-inset-top) 0 calc(var(--tab) + 170px + env(safe-area-inset-bottom));overscroll-behavior-y:none}
+body{padding:env(safe-area-inset-top) 0 calc(var(--tab) + 170px + env(safe-area-inset-bottom))}
 button{font:inherit;color:inherit;cursor:pointer}
 [data-a]{cursor:pointer}
 svg.ic{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
@@ -42,7 +42,7 @@ main{padding:10px 16px 0;max-width:560px;margin:0 auto}
 .title .aside{font-size:13px;color:var(--ink2);padding-bottom:5px;text-align:right}
 .label{font-size:13px;color:var(--ink2);margin:18px 4px 6px;display:flex;justify-content:space-between;gap:8px}
 .hint{font-size:12px;color:var(--ink3);margin:6px 4px 0}
-.card{background:var(--card);border-radius:16px;overflow:hidden}
+.card{background:var(--card);border-radius:12px;overflow:hidden}
 .pad{padding:14px 16px}
 .empty{text-align:center;color:var(--ink2);padding:34px 16px;font-size:15px}
 .empty b{display:block;color:var(--ink);font-size:17px;margin-bottom:4px}
@@ -90,6 +90,7 @@ main{padding:10px 16px 0;max-width:560px;margin:0 auto}
 /* 配達先の行（路線図ふう）。左スワイプで削除、長押しで並べ替え */
 .srow{position:relative;background:var(--red);-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .srow .row-del{position:absolute;right:0;top:0;bottom:0;width:88px;border:0;background:var(--red);color:#fff;font-size:15px;font-weight:700}
+.row-body:active{background:var(--rule)}
 .row-body{position:relative;display:flex;align-items:center;gap:12px;background:var(--card);padding:0 12px 0 0;min-height:62px;touch-action:pan-y;transition:transform .18s ease}
 .rail{position:relative;align-self:stretch;width:56px;flex:none;display:flex;align-items:center;justify-content:center}
 .rail::before{content:"";position:absolute;top:0;bottom:0;left:50%;width:4px;margin-left:-2px;background:var(--blue)}
@@ -134,7 +135,7 @@ main{padding:10px 16px 0;max-width:560px;margin:0 auto}
 .prevbar button{border:0;background:var(--card);color:var(--ink2);border-radius:8px;padding:6px 10px;font-size:13px;flex:none}
 
 #map{height:240px;border-radius:16px;margin-top:10px;z-index:0;background:var(--rule)}
-.mk{width:26px;height:26px;border-radius:50%;background:#0A5FB4;color:#fff;font:700 13px/1 var(--num);display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.45)}
+.mk{width:26px;height:26px;border-radius:50%;background:#007AFF;color:#fff;font:700 13px/1 var(--num);display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.45)}
 .mk.done{background:#8a919c}.mk.cur{background:#D93A2B}.mk.dep{background:#101820;border-radius:7px;font-size:12px}
 
 /* 下の操作バーとタブ */
@@ -148,7 +149,7 @@ main{padding:10px 16px 0;max-width:560px;margin:0 auto}
 .btn:active{transform:scale(.98);filter:brightness(.96)}
 .more{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:8px;margin-top:8px}
 .more .btn{font-size:15px;font-weight:600;min-height:46px;padding:10px 4px;border:1px solid var(--rule)}
-.tabbar{position:fixed;left:0;right:0;bottom:0;z-index:7;height:calc(var(--tab) + env(safe-area-inset-bottom));padding-bottom:env(safe-area-inset-bottom);background:var(--card);border-top:1px solid var(--rule);display:grid;grid-template-columns:repeat(4,1fr)}
+.tabbar{position:fixed;left:0;right:0;bottom:0;z-index:7;height:calc(var(--tab) + env(safe-area-inset-bottom));padding-bottom:env(safe-area-inset-bottom);background:var(--bar);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);border-top:.5px solid var(--rule);display:grid;grid-template-columns:repeat(4,1fr)}
 .tabbar button{border:0;background:transparent;color:var(--ink3);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:11px;font-weight:600}
 .tabbar button.on{color:var(--blue)}
 .tabbar svg.ic{width:24px;height:24px}
@@ -158,11 +159,17 @@ main{padding:10px 16px 0;max-width:560px;margin:0 auto}
 .sheet{background:var(--paper);width:100%;max-width:560px;margin:0 auto;border-radius:22px 22px 0 0;padding:8px 16px calc(16px + env(safe-area-inset-bottom));max-height:88vh;overflow:auto}
 .sheet::before{content:"";display:block;width:40px;height:5px;border-radius:3px;background:var(--rule);margin:0 auto 12px}
 .sheet h2{font-size:20px;font-weight:800;margin:0 2px 12px}
+.sheet .sub{font-size:14px;color:var(--ink2);margin:-8px 2px 12px}
+.ask{text-align:center;padding:16px 16px 14px;font-size:14px;color:var(--ink2);border-bottom:.5px solid var(--rule)}
+.ask b{display:block;font-size:16px;color:var(--ink);margin-bottom:2px}
+.as-btn{display:block;width:100%;border:0;background:var(--card);font-size:19px;padding:16px;color:var(--blue)}
+.as-btn.danger{color:var(--red)}
+.as-btn.cancel{font-weight:700;border-radius:12px;margin-top:8px}
 .opt{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:var(--card);border:0;padding:14px 16px;border-top:1px solid var(--rule)}
 .opt:first-child{border-top:0}
 .opt b{display:block;font-size:17px;font-weight:700}.opt span{font-size:13px;color:var(--ink2)}
 .opt svg{color:var(--blue)}
-.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--tab) + 150px + env(safe-area-inset-bottom));background:var(--ink);color:var(--paper);padding:10px 16px;border-radius:999px;font-size:15px;font-weight:600;z-index:30;max-width:92%;display:flex;align-items:center;gap:12px;box-shadow:0 6px 20px rgba(0,0,0,.25)}
+.toast{white-space:nowrap;position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--tab) + 150px + env(safe-area-inset-bottom));background:var(--ink);color:var(--paper);padding:10px 16px;border-radius:999px;font-size:15px;font-weight:600;z-index:30;max-width:92%;display:flex;align-items:center;gap:12px;box-shadow:0 6px 20px rgba(0,0,0,.25)}
 .toast button{border:0;background:transparent;color:inherit;font-weight:800;text-decoration:underline;padding:0}
 .loading{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:40;display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px;font-weight:700}
 
@@ -208,7 +215,7 @@ summary{font-size:14px;color:var(--ink2);padding:8px 4px}
    配達ルートアプリ
    データは端末（localStorage）に保存し、スプレッドシートとは Apps Script 経由で裏で同期する
    ========================================================= */
-const VERSION = 'v6';
+const VERSION = 'v7';
 const DWELL_DEFAULT = 6;            // 1件あたりの標準滞在（分）
 const AUTO_DONE_METERS = 250;       // アプリに戻った時、この距離以内なら自動で完了
 const MAX_WP = 25;                  // Routes API で1回に扱える経由地の上限
@@ -251,7 +258,7 @@ const S = {
 };
 if (!S.day.history) S.day.history = [];
 ['am','pm'].forEach(k => { const t = S.day.trips[k]; if (t.status === 'done'){ t.legs = null; S.day.history.push(t); S.day.trips[k] = newTrip(k); if (S.day.active === k) S.day.active = null; } });   // 前の版のデータを引き継ぐ
-function applyTheme(){ const th = S.cfg.theme || 'light'; document.documentElement.dataset.theme = th; const dark = th === 'dark' || (th === 'auto' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches); const m = document.getElementById('themeColor'); if (m) m.content = dark ? '#0D1217' : '#F3F5F1'; }
+function applyTheme(){ const th = S.cfg.theme || 'light'; document.documentElement.dataset.theme = th; const dark = th === 'dark' || (th === 'auto' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches); const m = document.getElementById('themeColor'); if (m) m.content = dark ? '#000000' : '#F2F2F7'; }
 applyTheme();
 let flushing = false, returning = false, IDX = null, mapObj = null, mapSeq = 0, leaflet = null, sorters = [], sorting = false, swipedAt = 0;
 const save = () => { LS.set('day', S.day); LS.set('cfg', S.cfg); };
@@ -725,7 +732,7 @@ async function drawMap(){
   for (let i = t.idx; i <= t.order.length; i++){
     const leg = curLeg(t, i), a = at(i - 1), b = at(i);
     const line = (leg && leg.poly) ? decodePoly(leg.poly) : (a && b && (i > t.idx || t.status !== 'run')) ? [[a.lat,a.lng],[b.lat,b.lng]] : null;
-    if (line) L.polyline(line, { color:'#0A5FB4', weight:4, opacity:.85, dashArray: (leg && leg.poly) ? null : '6 8' }).addTo(m);
+    if (line) L.polyline(line, { color:'#007AFF', weight:4, opacity:.85, dashArray: (leg && leg.poly) ? null : '6 8' }).addTo(m);
   }
   if (dep){ L.marker([dep.lat, dep.lng], { icon: icon('dep','営') }).addTo(m).bindPopup('営業所'); all.push([dep.lat, dep.lng]); }
   t.order.forEach((id, i) => {
@@ -762,7 +769,7 @@ function memoHtml(p){
 function stopRow(o){
   return `<div class="srow ${o.cls||''} ${o.del?'del':''} ${o.drag?'can':''}" data-id="${o.id||''}">
     ${o.del ? `<button class="row-del" data-a="${o.del.a}" data-id="${o.id}">${o.del.label}</button>` : ''}
-    <div class="row-body"><div class="rail"><span class="node">${o.num}</span></div>
+    <div class="row-body" ${o.tap ? `data-a="stop" data-id="${o.id}" data-ctx="${o.tap}"` : ''}><div class="rail"><span class="node">${o.num}</span></div>
       <div class="txt"><div class="nm">${esc(o.name)}${o.extra||''}</div>${o.addr ? `<div class="ad">${esc(o.addr)}</div>` : ''}</div>
       ${o.flag || ''}${o.side ? `<div class="side">${o.side}</div>` : ''}${o.drag ? `<span class="grip">${IC.grip}</span>` : ''}
     </div></div>`;
@@ -778,42 +785,51 @@ function render(){
 
 /* ---------- 登録 ---------- */
 function vReg(){
-  const t = S.day.trips[S.shift], running = t.status === 'run', stops = live(t);
-  const cnt = k => live(S.day.trips[k]).length;
   $('#main').innerHTML = title('今日の配達', dateLabel(S.day.date)) + `
     <div class="label" style="margin-top:0"><span>どちらの便に入れますか</span></div>
-    <div class="shift">${['am','pm'].map(k => `<button data-a="shift" data-s="${k}" class="${S.shift===k?'on':''}" aria-pressed="${S.shift===k}"><span class="dot">${IC.check}</span><b>${shiftName(k)}の便</b><span class="n">${cnt(k)}<small>件</small></span></button>`).join('')}</div>
+    <div class="shift" id="shiftPick"></div>
     <div class="search">${IC.search}<input id="q" placeholder="薬局名・住所・電話番号で探す" value="${esc(S.q)}" autocomplete="off" autocorrect="off" enterkeyhint="search"><button class="clear" data-a="clearQ" aria-label="消す" ${S.q ? '' : 'hidden'}>${IC.x}</button></div>
-    <div id="cands">${candHtml()}</div>
-    ${stops.length ? `
-      <div class="label"><span>${shiftName(S.shift)}の配達先</span><span>${stops.length}件</span></div>
-      <div class="card noline" data-sort="${running ? '' : 'reg'}">${stops.map((s, i) => { const p = byId(s.id) || { name:s.id, addr:'' }; const done = s.state === 'done';
-        return stopRow({ id:s.id, num: done ? IC.check : i + 1, cls: done ? 'done' : '', name:p.name, addr:shortAddr(p.addr),
-          extra: done ? ' <span class="chip green">完了</span>' : s.pin ? ' <span class="chip amber">最初に行く</span>' : '',
-          flag: running ? '' : `<button class="flag ${s.pin?'on':''}" data-a="pin" data-id="${s.id}" aria-label="最初に行く">${IC.flag}</button>`,
-          del: done ? null : running ? { a:'delRegRun', label:'外す' } : { a:'delReg', label:'削除' }, drag: !running }); }).join('')}</div>
-      ${running ? '<p class="hint">この便は配達中です。追加するとルートに入り、左にスワイプすると外せます。最初からやり直す時は下の「この便をやめる」。</p>'
-                : '<p class="hint">左にスワイプで削除、長押しで並べ替え。旗は「最初に行く」の印です。</p>'}`
-    : `<div class="empty"><b>伝票の薬局を入れていこう</b>上の検索に名前を入れると候補が出ます。<br>マイクで「とまと薬局、大城薬局」と続けて言っても大丈夫。</div>`}
-    ${!S.master.length ? `<div class="memo">薬局リストがまだありません。「設定」で設定リンクを読み込んでください。</div>` : ''}`;
-  setBar(running ? `<button class="btn primary" data-a="tab" data-v="go">配達の画面へ</button><div class="more"><button class="btn danger" data-a="cancelTrip">この便をやめる</button></div>`
-       : stops.length ? `<button class="btn primary" data-a="build">最短ルートを作る</button><div class="more"><button class="btn" data-a="buildFixed">この順番で行く</button><button class="btn" data-a="move">${shiftName(S.shift==='am'?'pm':'am')}に移す</button><button class="btn danger" data-a="clearAll">すべて消す</button></div>` : '');
+    <div id="cands"></div>
+    <div id="regList"></div>`;
   const q = $('#q');
   q.oninput = () => { S.q = q.value; $('#cands').innerHTML = candHtml(); $('.clear').hidden = !S.q; };
+  refreshReg();
+}
+/* 検索の入力欄はそのままに、候補・一覧・下のボタンだけ描き直す（キーボードと画面位置を保つ） */
+function refreshReg(){
+  const t = S.day.trips[S.shift], running = t.status === 'run', stops = live(t);
+  const cnt = k => live(S.day.trips[k]).length;
+  $('#shiftPick').innerHTML = ['am','pm'].map(k => `<button data-a="shift" data-s="${k}" class="${S.shift===k?'on':''}" aria-pressed="${S.shift===k}"><span class="dot">${IC.check}</span><b>${shiftName(k)}の便</b><span class="n">${cnt(k)}<small>件</small></span></button>`).join('');
+  const q = $('#q'); if (q.value !== S.q) q.value = S.q;
+  $('.clear').hidden = !S.q;
+  $('#cands').innerHTML = candHtml();
+  $('#regList').innerHTML = stops.length ? `
+      <div class="label"><span>${shiftName(S.shift)}の配達先</span><span>${stops.length}件</span></div>
+      <div class="card noline" data-sort="${running ? '' : 'reg'}">${stops.map((s, i) => { const p = byId(s.id) || { name:s.id, addr:'' }; const done = s.state === 'done';
+        return stopRow({ id:s.id, num: done ? IC.check : i + 1, cls: done ? 'done' : '', name:p.name, addr:shortAddr(p.addr), tap:'reg',
+          extra: (done ? ' <span class="chip green">完了</span>' : s.pin ? ' <span class="chip amber">最初に行く</span>' : '') + (tagsOf(p).length || p.note ? ' <span class="chip amber">メモ</span>' : ''),
+          del: done ? null : running ? { a:'delRegRun', label:'外す' } : { a:'delReg', label:'削除' }, drag: !running }); }).join('')}</div>
+      ${running ? '<p class="hint">この便は配達中です。追加するとルートに入り、左にスワイプすると外せます。</p>'
+                : '<p class="hint">タップでメモや操作、左にスワイプで削除、長押しして動かすと並べ替え。</p>'}`
+    : `<div class="empty"><b>伝票の薬局を入れていこう</b>上の検索に名前を入れると候補が出ます。<br>マイクで「とまと薬局、大城薬局」と続けて言っても大丈夫。</div>`;
+  if (!S.master.length) $('#regList').innerHTML += `<div class="memo">薬局リストがまだありません。「設定」で設定リンクを読み込んでください。</div>`;
+  setBar(running ? `<button class="btn primary" data-a="tab" data-v="go">配達の画面へ</button><div class="more"><button class="btn danger" data-a="cancelTrip">この便をやめる</button></div>`
+       : stops.length ? `<button class="btn primary" data-a="build">最短ルートを作る</button><div class="more"><button class="btn" data-a="buildFixed">この順で行く</button><button class="btn" data-a="move">${shiftName(S.shift==='am'?'pm':'am')}に移す</button><button class="btn danger" data-a="clearAll">すべて消す</button></div>` : '');
+  initSort();
 }
 function candHtml(){
-  const groups = tokens(S.q).map(tok => ({ tok, res: searchOne(tok) }));
   const usage = LS.get('usage', {});
   if (!S.q.trim()){
     const have = new Set(['am','pm'].flatMap(k => live(S.day.trips[k]).map(s => s.id)));
     const top = Object.entries(usage).filter(([id]) => !have.has(id) && byId(id)).sort((a, b) => b[1] - a[1]).slice(0, 8);
     return top.length ? `<div class="quick">${top.map(([id]) => `<button data-a="add" data-id="${id}">${IC.plus}${esc(byId(id).name)}</button>`).join('')}</div>` : '';
   }
+  const groups = tokens(S.q).map(tok => ({ tok, res: searchOne(tok) }));
   return groups.map(g => `
     ${groups.length > 1 ? `<div class="label"><span>「${esc(g.tok)}」</span></div>` : '<div style="height:8px"></div>'}
     <div class="card">${g.res.length ? g.res.map(p => `
       <div class="cand" data-a="add" data-id="${p.id}" data-tok="${esc(g.tok)}"><div class="grow"><div class="nm">${esc(p.name)} ${(p.visits || usage[p.id]) ? '<span class="chip">前に行った</span>' : ''}</div><div class="ad">${esc(shortAddr(p.addr))}</div></div><span class="plus">${IC.plus}</span></div>`).join('')
-      : `<div class="cand"><div class="grow"><div class="nm">見つかりません</div><div class="ad">リストにない薬局は、名前と住所で登録できます</div></div><button class="mini" data-a="new" data-tok="${esc(g.tok)}">登録する</button></div>`}</div>`).join('');
+      : `<div class="cand"><div class="grow"><div class="nm">見つかりません</div><div class="ad">リストにない薬局は、名前と住所で登録できます</div></div><button class="mini" data-a="sheet" data-s="new" data-tok="${esc(g.tok)}">登録する</button></div>`}</div>`).join('');
 }
 
 /* ---------- 配達 ---------- */
@@ -844,10 +860,10 @@ function vGo(){
       <div class="label"><span>回る順番</span><span>着く予定</span></div>
       <div class="card">
         ${depRow('発', '', 'first')}
-        <div data-sort="ready">${t.order.map((_, i) => rowOf(i, { del:{ a:'delReady', label:'外す' }, drag:true })).join('')}</div>
+        <div data-sort="ready">${t.order.map((_, i) => rowOf(i, { del:{ a:'delReady', label:'外す' }, drag:true, tap:'ready' })).join('')}</div>
         ${depRow('着', hm(e.end), 'last')}
       </div>
-      <p class="hint">長押しで順番を入れ替え、左にスワイプで外せます。高速・有料道路は使いません。</p>`;
+      <p class="hint">タップでメモ、長押しして動かすと入れ替え、左にスワイプで外せます。高速・有料道路は使いません。</p>`;
     setBar(`<button class="btn primary" data-a="start">${IC.nav}出発する</button><div class="more"><button class="btn" data-a="sheet" data-s="add">薬局を追加</button>${t.manual ? `<button class="btn" data-a="rebuild">最短に並べ直す</button>` : `<button class="btn" data-a="edit">登録に戻る</button>`}</div>`);
     return;
   }
@@ -879,7 +895,7 @@ function vGo(){
     ${memoHtml(p)}
     ${mapPart}
     ${rest ? `<div class="label"><span>このあと ${rest}件</span><span>着く予定</span></div>
-      <div class="card"><div data-sort="run">${Array.from({length: show}, (_, k) => rowOf(t.idx + 1 + k, { cls: k === 0 ? 'first' : '', del:{ a:'delRun', label:'行かない' }, drag:true })).join('')}</div>
+      <div class="card"><div data-sort="run">${Array.from({length: show}, (_, k) => rowOf(t.idx + 1 + k, { cls: k === 0 ? 'first' : '', del:{ a:'delRun', label:'行かない' }, drag:true, tap:'run' })).join('')}</div>
       ${show === rest ? depRow('着', hm(e.end), 'last') : ''}</div>
       ${rest > 3 ? `<button class="btn quiet" data-a="toggleAll">${S.showAll ? '少なく表示' : 'あと' + (rest - 3) + '件も見る'}</button>` : ''}` : '<p class="hint" style="text-align:center;margin-top:16px">これが最後の1件です</p>'}`;
   setBar(going
@@ -944,42 +960,70 @@ function vSet(){
 }
 
 /* ---------- 下から出るシート ---------- */
+function ask(titleText, msg, okLabel, fn){ S.confirm = { title: titleText, msg, ok: okLabel, fn }; S.sheet = 'confirm'; renderSheet(); }
 function renderSheet(){
   const o = $('#overlay'); if (o.querySelector('.loading')) return;
   if (!S.sheet){ o.innerHTML = ''; return; }
   const t = curTrip();
-  const wrap = body => `<div class="sheet-bg" data-a="close"><div class="sheet">${body}<button class="btn quiet" data-a="close" style="margin-top:6px">閉じる</button></div></div>`;
-  if (S.sheet === 'change'){
+  const wrap = body => `<div class="sheet-bg" data-a="close"><div class="sheet">${body}<button class="as-btn cancel" data-a="close">閉じる</button></div></div>`;
+  if (S.sheet === 'confirm'){
+    const c = S.confirm;
+    o.innerHTML = `<div class="sheet-bg" data-a="close"><div class="sheet"><div class="card"><div class="ask"><b>${esc(c.title)}</b>${esc(c.msg)}</div><button class="as-btn danger" data-a="confirmOk">${esc(c.ok)}</button></div><button class="as-btn cancel" data-a="close">キャンセル</button></div></div>`;
+  } else if (S.sheet === 'stop'){
+    const id = S.stopId, ctx = S.stopCtx, p = byId(id); if (!p){ S.sheet = null; o.innerHTML = ''; return; }
+    const tr = ctx === 'reg' ? S.day.trips[S.shift] : t, st = tr.stops.find(x => x.id === id) || {}, tg = tagsOf(p);
+    const act = (doing, icon, label, sub, danger) => `<button class="opt" data-a="stopAct" data-do="${doing}" data-id="${id}" ${danger ? 'style="color:var(--red)"' : ''}>${danger ? icon.replace('class="ic"','class="ic" style="color:var(--red)"') : icon}<div><b>${label}</b>${sub ? `<span>${sub}</span>` : ''}</div></button>`;
+    let acts = '';
+    if (ctx === 'reg' && tr.status !== 'run') acts = act('pin', IC.flag, st.pin ? '「最初に行く」をやめる' : '最初に行く', '最短ルートでも、ここを先頭にします') + act('moveOne', IC.up, shiftName(S.shift === 'am' ? 'pm' : 'am') + 'の便に移す') + act('delReg', IC.x, '削除', '', true);
+    else if (ctx === 'reg' && st.state !== 'done') acts = act('delRegRun', IC.ban, '今日は行かない', 'この便から外します', true);
+    else if (ctx === 'ready') acts = act('delReady', IC.ban, 'この便から外す', '', true);
+    else if (ctx === 'run') acts = act('first', IC.up, '次に行く', 'この薬局を次の配達先にします') + act('drop', IC.ban, '今日は行かない', 'この便から外します', true);
+    o.innerHTML = wrap(`<h2>${esc(p.name)}</h2><div class="sub">${esc(shortAddr(p.addr))}${p.tel ? '　' + esc(p.tel) : ''}</div>
+      <div class="label" style="margin-top:0"><span>メモ（次に行く時、配達の画面に出ます）</span></div>
+      <div class="card pad">
+        <div class="tags">${TAG_LIST.map(x => `<button class="tag ${tg.includes(x)?'on':''}" data-a="tag" data-tag="${esc(x)}" data-id="${id}">${esc(x)}</button>`).join('')}</div>
+        <textarea data-note="${id}" placeholder="例：駐車場は建物の裏。受付は2階">${esc(p.note||'')}</textarea>
+      </div>
+      <div class="card" style="margin-top:12px">
+        <button class="opt" data-a="park" data-id="${id}">${IC.here}<div><b>${p.plat ? '駐車位置を今の場所に直す' : '今いる場所を駐車位置にする'}</b><span>${p.plat ? '登録済み。ナビはここへ案内します' : '薬局の前にいる時に押すと、ナビの行き先になります'}</span></div></button>
+        <button class="opt" data-a="openMap" data-id="${id}">${IC.nav}<div><b>Googleマップで場所を見る</b></div></button>
+        ${acts}
+      </div><div style="height:8px"></div>`);
+  } else if (S.sheet === 'new'){
+    o.innerHTML = wrap(`<h2>新しい薬局を登録</h2><div class="sub">伝票の名前と住所をそのまま入れてください</div>
+      <div class="card pad"><input class="field" id="nName" placeholder="薬局名" value="${esc(S.newName || '')}" autocomplete="off"><div style="height:8px"></div><input class="field" id="nAddr" placeholder="住所（例：沖縄県浦添市城間1-2-3）" value="沖縄県" autocomplete="off"></div>
+      <div style="height:10px"></div><button class="btn primary" data-a="newSave" style="min-height:54px;font-size:18px">登録して追加</button><div style="height:8px"></div>`);
+  } else if (S.sheet === 'change'){
     const cur = byId(t.order[t.idx]);
     o.innerHTML = wrap(`<h2>その他</h2><div class="card">
       <button class="opt" data-a="rr">${IC.here}<div><b>今いる場所から最短に組み直す</b><span>渋滞や寄り道のあとに</span></div></button>
       <button class="opt" data-a="sheet" data-s="first">${IC.up}<div><b>先に行く薬局を選ぶ</b><span>選んだ薬局を次にします</span></div></button>
       <button class="opt" data-a="sheet" data-s="add">${IC.plus}<div><b>薬局を追加</b><span>名前で探して、ルートに入れます</span></div></button>
-      ${cur ? `<button class="opt" data-a="done">${IC.check}<div><b>${esc(cur.name)} を完了にする</b><span>ナビを使わずに配達した時</span></div></button>
+      ${cur ? `<button class="opt" data-a="stop" data-id="${cur.id}" data-ctx="cur">${IC.note}<div><b>${esc(cur.name)} のメモを書く</b><span>裏口・駐車場など</span></div></button>
+      <button class="opt" data-a="done">${IC.check}<div><b>${esc(cur.name)} を完了にする</b><span>ナビを使わずに配達した時</span></div></button>
       <button class="opt" data-a="drop" data-id="${cur.id}">${IC.ban}<div><b>${esc(cur.name)} は今日行かない</b><span>リストから外します</span></div></button>` : ''}
       <button class="opt" data-a="toggleMap">${IC.nav}<div><b>${S.showMap ? '地図を閉じる' : '地図を見る'}</b><span>残りの配達先を地図で確認</span></div></button>
       <button class="opt" data-a="cancelTrip" style="color:var(--red)">${IC.x.replace('class="ic"','class="ic" style="color:var(--red)"')}<div><b>この便をやめる</b><span>登録の画面に戻って、やり直します</span></div></button>
-    </div>`);
+    </div><div style="height:8px"></div>`);
   } else if (S.sheet === 'first'){
-    o.innerHTML = wrap(`<h2>先に行く薬局を選ぶ</h2><div class="card noline">${t.order.slice(t.idx).map((id, i) => `<div data-a="first" data-id="${id}">${stopRow({ num: t.idx + i + 1, name: byId(id)?.name || id })}</div>`).join('')}</div>`);
+    o.innerHTML = wrap(`<h2>先に行く薬局を選ぶ</h2><div class="card noline">${t.order.slice(t.idx).map((id, i) => `<div data-a="first" data-id="${id}">${stopRow({ num: t.idx + i + 1, name: byId(id)?.name || id })}</div>`).join('')}</div><div style="height:8px"></div>`);
   } else if (S.sheet === 'add'){
-    o.innerHTML = wrap(`<h2>薬局を追加</h2><div class="search">${IC.search}<input id="aq" placeholder="薬局名・電話番号で探す" autocomplete="off" autocorrect="off"></div><div id="acands" style="min-height:120px"></div>`);
-    const aq = $('#aq'); aq.focus();
+    o.innerHTML = wrap(`<h2>薬局を追加</h2><div class="search">${IC.search}<input id="aq" placeholder="薬局名・住所・電話番号で探す" autocomplete="off" autocorrect="off"></div><div id="acands" style="min-height:160px"></div>`);
+    const aq = $('#aq'); aq.focus({ preventScroll:true });
     aq.oninput = () => { const r = searchOne(aq.value); $('#acands').innerHTML = aq.value.trim() ? `<div style="height:8px"></div><div class="card">${r.map(p => `<div class="cand" data-a="addrun" data-id="${p.id}"><div class="grow"><div class="nm">${esc(p.name)}</div><div class="ad">${esc(shortAddr(p.addr))}</div></div><span class="plus">${IC.plus}</span></div>`).join('') || '<div class="cand"><div class="grow"><div class="nm">見つかりません</div></div></div>'}</div>` : ''; };
   }
 }
 
 /* 新しい薬局をリストに登録 */
-async function newPharmacy(name){
-  const nm = prompt('薬局名', name || ''); if (!nm) return;
-  const addr = prompt('住所（伝票の住所をそのまま）', '沖縄県'); if (!addr || addr === '沖縄県') return;
-  busy('登録中…');
+async function newPharmacy(nm, addr){
+  if (!nm || !addr || addr === '沖縄県'){ toast('薬局名と住所を入れてください'); return; }
+  S.sheet = null; busy('登録中…');
   try{
     const j = await api({ a:'add', name:nm, addr });
     S.master.push(j.row); saveMaster();
     if (!j.row.lat) toast('住所から場所が分かりませんでした。住所を確かめてね');
     S.q = ''; busy(false); addToTrip(S.day.trips[S.shift], j.row.id);
-  }catch(e){ toast(e.message); }
+  }catch(e){ toast(e.message === 'Failed to fetch' ? '通信できませんでした' : e.message); }
   busy(false); render();
 }
 
@@ -992,8 +1036,9 @@ function initSort(){
     sorters.push(new Sortable(el, {
       draggable: '.srow.can', animation: 160, delay: 260, delayOnTouchOnly: false, touchStartThreshold: 6,
       forceFallback: true, fallbackOnBody: true, fallbackTolerance: 4, filter: '.row-del,.flag', preventOnFilter: false,
-      onChoose: () => { sorting = true; closeSwipes(); },
-      onUnchoose: () => { sorting = false; },
+      onChoose: ev => { sorting = true; held = { id: ev.item.dataset.id, moved: false }; closeSwipes(); },
+      onStart: () => { if (held) held.moved = true; },
+      onUnchoose: () => { sorting = false; const h = held; held = null; if (h && !h.moved && h.id) ACT.stop({ id: h.id, ctx: el.dataset.sort }); },
       onEnd: ev => { sorting = false; if (ev.oldIndex !== ev.newIndex) reorder(el.dataset.sort, [...el.querySelectorAll('.srow[data-id]')].map(x => x.dataset.id)); }
     }));
   });
@@ -1012,7 +1057,7 @@ function reorder(kind, ids){
   }
 }
 const DEL_W = 88;
-let sw = null;
+let sw = null, held = null;
 function closeSwipes(except){
   document.querySelectorAll('.srow.open').forEach(r => { if (r !== except){ r.classList.remove('open'); r.querySelector('.row-body').style.transform = ''; } });
 }
@@ -1055,14 +1100,28 @@ document.addEventListener('pointercancel', () => { if (sw && sw.on){ sw.body.sty
 const ACT = {
   tab: d => { if (toastEl) toastEl.remove(); S.view = d.v; S.sheet = null; if (d.v === 'go') S.showAll = false; if (d.v === 'reg' && S.day.active) S.shift = S.day.active; render(); window.scrollTo(0, 0); },
   shift: d => { S.shift = d.s; render(); },
-  clearQ: () => { S.q = ''; render(); $('#q').focus(); },
+  clearQ: () => { S.q = ''; refreshReg(); $('#q').focus({ preventScroll:true }); },
   add: d => {
     const tk = tokens(S.q);
     S.q = tk.length > 1 ? tk.filter(x => x !== d.tok).join('、') : '';
-    addToTrip(S.day.trips[S.shift], d.id); render();
-    if (!S.q){ const q = $('#q'); if (q) q.focus(); }
+    const t = S.day.trips[S.shift];
+    addToTrip(t, d.id);
+    if (S.view === 'reg' && t.status === 'plan') refreshReg();   // 入力欄は触らない＝キーボードも画面の位置もそのまま
   },
-  new: d => newPharmacy(d.tok),
+  newSave: () => newPharmacy($('#nName').value.trim(), $('#nAddr').value.trim()),
+  stop: (d, el) => {
+    if (el && el.closest('.srow.open')){ closeSwipes(); return; }
+    S.stopId = d.id; S.stopCtx = d.ctx === 'cur' ? 'none' : d.ctx; S.sheet = 'stop'; renderSheet();
+  },
+  stopAct: d => { S.sheet = null; ACT[d.do]({ id: d.id }); },
+  moveOne: d => {
+    const from = S.day.trips[S.shift], to = S.day.trips[S.shift === 'am' ? 'pm' : 'am'], i = from.stops.findIndex(s => s.id === d.id);
+    if (i < 0) return; if (to.status === 'run'){ toast('配達中の便には移せません'); render(); return; }
+    to.stops.push(...from.stops.splice(i, 1)); from.order = to.order = null; from.status = to.status = 'plan'; save(); render();
+    toast(shiftName(to.shift) + 'の便に移しました');
+  },
+  openMap: d => { const p = byId(d.id); if (p){ const c = pt(p); location.href = 'https://www.google.com/maps/search/?api=1&query=' + c.lat + ',' + c.lng; } },
+  confirmOk: () => { const c = S.confirm; S.sheet = null; S.confirm = null; renderSheet(); if (c) c.fn(); },
   delReg: d => {
     const t = S.day.trips[S.shift], i = t.stops.findIndex(s => s.id === d.id); if (i < 0) return;
     const [gone] = t.stops.splice(i, 1); t.order = null; t.status = 'plan'; save(); render();
@@ -1084,11 +1143,12 @@ const ACT = {
   cancelTrip: () => {
     const t = S.day.trips[S.day.active || S.shift];
     if (t.status !== 'run' && t.status !== 'ready') return;
-    if (!confirm('この便をやめて、登録からやり直しますか？\n（配達先のリストは残ります）')) return;
-    if (t.status === 'run') logChange('便をやめた', '', null);
-    t.stops = live(t); t.stops.forEach(s => Object.assign(s, { state:'todo', doneAt:null, seq:null, arrAt:null, dwell:null }));
-    Object.assign(t, { status:'plan', order:null, legs:null, legBase:0, idx:0, navAt:null, pending:null, startAt:null, manual:false, changes:0 });
-    S.shift = t.shift; S.day.active = null; S.sheet = null; S.view = 'reg'; save(); render(); window.scrollTo(0, 0);
+    ask('この便をやめますか？', '配達先のリストは残ります。登録の画面からやり直せます。', 'この便をやめる', () => {
+      if (t.status === 'run') logChange('便をやめた', '', null);
+      t.stops = live(t); t.stops.forEach(s => Object.assign(s, { state:'todo', doneAt:null, seq:null, arrAt:null, dwell:null }));
+      Object.assign(t, { status:'plan', order:null, legs:null, legBase:0, idx:0, navAt:null, pending:null, startAt:null, manual:false, changes:0 });
+      S.shift = t.shift; S.day.active = null; S.view = 'reg'; save(); render(); window.scrollTo(0, 0);
+    });
   },
   pin: d => { const t = S.day.trips[S.shift], s = t.stops.find(s => s.id === d.id); s.pin = !s.pin; t.order = null; t.status = 'plan'; save(); render(); },
   move: () => { const from = S.day.trips[S.shift], to = S.day.trips[S.shift === 'am' ? 'pm' : 'am']; if (to.status === 'run'){ toast('配達中の便には移せません'); return; } to.stops.push(...from.stops); from.stops = []; from.order = to.order = null; from.status = to.status = 'plan'; S.shift = to.shift; save(); render(); },
@@ -1103,8 +1163,8 @@ const ACT = {
   later: () => skipLater(),
   done: () => complete(false),
   undoDone: () => undoDone(),
-  sheet: d => { S.sheet = d.s; renderSheet(); },
-  close: () => { S.sheet = null; renderSheet(); },
+  sheet: d => { if (d.s === 'new') S.newName = d.tok || ''; S.sheet = d.s; renderSheet(); },
+  close: () => { const was = S.sheet; S.sheet = null; if (was === 'stop') render(); else renderSheet(); },
   rr: () => { S.sheet = null; reroute('組み直し', { manual:false }); },
   first: d => { S.sheet = null; reroute('先に行く', { firstId: d.id, fixed: curTrip().manual }); },
   drop: d => { S.sheet = null; dropStop(d.id); },
@@ -1127,7 +1187,7 @@ const ACT = {
   theme: d => { S.cfg.theme = d.th; save(); applyTheme(); render(); },
   reload: () => loadMaster(false),
   flushNow: () => { toast('送信しています'); flush().then(() => { if (S.view === 'set') render(); }); },
-  resetDay: () => { if (confirm('今日の配達を全部消しますか？（スプレッドシートの記録は残ります）')){ S.day = newDay(); save(); S.view = 'reg'; render(); } },
+  resetDay: () => ask('今日の配達をすべて消しますか？', '送信済みの記録はスプレッドシートに残ります。', 'すべて消す', () => { S.day = newDay(); save(); S.view = 'reg'; render(); }),
   pasteSetup: () => {
     const r = readSetup($('#cLink').value);
     if (!r){ toast('設定リンクが読めませんでした'); return; }

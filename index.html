@@ -213,12 +213,14 @@ main{padding:10px 16px 0;max-width:560px;margin:0 auto}
 .sheet-bg{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:20;display:flex;align-items:flex-end}
 .sheet{background:var(--paper);width:100%;max-width:560px;margin:0 auto;border-radius:22px 22px 0 0;padding:0 16px calc(16px + env(safe-area-inset-bottom));max-height:88vh;overflow:auto}
 .sheet{transition:transform .22s ease}
-.sheet-top{position:sticky;top:0;z-index:3;display:flex;align-items:center;justify-content:center;height:44px;margin:0 -16px 4px;padding:0 12px;background:var(--paper);border-radius:22px 22px 0 0;touch-action:none}
-.sheet-top .grab{width:40px;height:5px;border-radius:3px;background:var(--ink3);opacity:.5}
-.sheet-x{position:absolute;right:12px;top:7px;width:32px;height:32px;border-radius:50%;border:0;background:var(--rule);color:var(--ink2);display:flex;align-items:center;justify-content:center}
-.sheet-x svg{width:15px;height:15px;stroke-width:2.8}
+.sheet-top{position:sticky;top:0;z-index:3;display:flex;align-items:flex-start;justify-content:center;height:56px;margin:0 -16px;padding:0 12px;background:var(--paper);border-radius:22px 22px 0 0;touch-action:none}
+.sheet-top .grab{width:44px;height:5px;border-radius:3px;background:var(--ink3);opacity:.5;margin-top:9px}
+.sheet h2,.sheet .sub{touch-action:none}
+.sheet-x{position:absolute;right:10px;top:10px;width:38px;height:38px;border-radius:50%;border:0;background:var(--rule);color:var(--ink2);display:flex;align-items:center;justify-content:center}
+.sheet-x svg{width:17px;height:17px;stroke-width:2.8}
+.sheet-x::after{content:"";position:absolute;inset:-8px}
 .sheet-x:active{transform:scale(.92)}
-.sheet h2{font-size:20px;font-weight:800;margin:0 2px 12px}
+.sheet h2{font-size:20px;font-weight:800;margin:-14px 50px 12px 2px;position:relative;z-index:4}
 .sheet .sub{font-size:14px;color:var(--ink2);margin:-8px 2px 12px}
 .ask{text-align:center;padding:16px 16px 14px;font-size:14px;color:var(--ink2);border-bottom:.5px solid var(--rule)}
 .ask b{display:block;font-size:16px;color:var(--ink);margin-bottom:2px}
@@ -275,7 +277,7 @@ summary{font-size:14px;color:var(--ink2);padding:8px 4px}
    配達ルートアプリ
    データは端末（localStorage）に保存し、スプレッドシートとは Apps Script 経由で裏で同期する
    ========================================================= */
-const VERSION = 'v20';
+const VERSION = 'v21';
 const AUTO_DONE_METERS = 250;       // アプリに戻った時、この距離以内なら自動で完了
 const MAX_WP = 25;                  // Routes API で1回に扱える経由地の上限
 const TAG_LIST = ['裏口','右側','左側','駐車しにくい','駐車場あり','昼休みあり','受付に時間がかかる'];
@@ -1286,8 +1288,8 @@ document.addEventListener('pointercancel', () => { if (sw && sw.on){ sw.body.sty
 /* シートは、上のつまみを下に引いても閉じられる */
 let pull = null;
 document.addEventListener('pointerdown', e => {
-  const topEl = e.target.closest('.sheet-top'); if (!topEl || e.target.closest('.sheet-x')) return;
-  pull = { sheet: topEl.parentNode, y: e.clientY, dy: 0, id: e.pointerId };
+  const topEl = e.target.closest('.sheet-top, .sheet h2, .sheet .sub'); if (!topEl || e.target.closest('.sheet-x')) return;
+  pull = { sheet: topEl.closest('.sheet'), y: e.clientY, dy: 0, id: e.pointerId };
   pull.sheet.style.transition = 'none';
   try{ topEl.setPointerCapture(e.pointerId); }catch(err){}
 });

@@ -104,7 +104,7 @@ label.f{display:block;font-size:14px;color:var(--sub);margin:12px 0 4px}
    配達ルートアプリ（1ファイル構成）
    データは端末（localStorage）に保存し、スプレッドシートとは Apps Script 経由で裏で同期する
    ========================================================= */
-const VERSION = 'v2';
+const VERSION = 'v3';
 const DWELL_DEFAULT = 6;            // 1件あたりの標準滞在（分）
 const AUTO_DONE_METERS = 250;       // アプリに戻った時、この距離以内なら自動で完了
 const MAX_WP = 25;                  // Routes API の順番最適化で1回に扱える経由地の上限
@@ -149,15 +149,32 @@ function ensureToday(){
 }
 
 /* ---------- 初回セットアップ（#setup=...） ---------- */
-(function(){
-  const m = location.hash.match(/setup=([^&]+)/);
-  if (!m) return;
+/* 設定はアドレスの #setup= に入れて持ち運ぶ。ホーム画面に追加したアプリは保存場所が別なので、
+   アドレスに設定を残しておき、追加した時に一緒に引き継がれるようにする */
+function readSetup(text){
+  const m = String(text || '').match(/setup=([^&\s]+)/);
+  if (!m) return false;
   try{
     const o = JSON.parse(decodeURIComponent(escape(atob(decodeURIComponent(m[1])))));
-    S.cfg.url = o.u; S.cfg.t = o.t; save();
-    history.replaceState(null,'',location.pathname);
-    setTimeout(()=>toast('設定を読み込みました'),300);
-  }catch(e){ setTimeout(()=>toast('設定リンクが読めませんでした'),300); }
+    if (!o.u || !o.t) return false;
+    const fresh = S.cfg.url !== o.u || S.cfg.t !== o.t;
+    S.cfg.url = o.u; S.cfg.t = o.t;
+    if (o.d && !S.cfg.depot) S.cfg.depot = o.d;
+    save();
+    return fresh ? 'new' : 'same';
+  }catch(e){ return false; }
+}
+function setupHash(){
+  if (!S.cfg.url) return '';
+  const o = { u: S.cfg.url, t: S.cfg.t }; if (S.cfg.depot) o.d = S.cfg.depot;
+  return '#setup=' + encodeURIComponent(btoa(unescape(encodeURIComponent(JSON.stringify(o)))));
+}
+function keepSetupInUrl(){ try{ if (S.cfg.url) history.replaceState(null, '', location.pathname + setupHash()); }catch(e){} }
+(function(){
+  if (!/setup=/.test(location.hash)) return;
+  const r = readSetup(location.hash);
+  if (r === 'new') setTimeout(() => toast('設定を読み込みました'), 300);
+  if (r === false) setTimeout(() => toast('設定リンクが読めませんでした'), 300);
 })();
 
 /* ---------- 通信（Apps Script） ---------- */
@@ -169,7 +186,7 @@ async function api(body){
   return j;
 }
 async function loadMaster(silent){
-  if (!S.cfg.url) return;
+  if (!S.cfg.url){ if (!silent) toast('先に接続設定が必要です（設定リンクを読み込んでね）'); return; }
   try{
     const res = await fetch(S.cfg.url + '?a=master&t=' + encodeURIComponent(S.cfg.t));
     const j = await res.json();
@@ -677,6 +694,14 @@ function vSet(){
       <div style="height:8px"></div>
       <button class="btn small" data-a="resetDay" style="color:var(--danger)">今日の配達をリセット</button>
     </div>
+    ${S.cfg.url ? '' : `<div class="card memo">接続設定がまだありません。設定リンク（QRコードのリンク）をコピーして、下に貼り付けてください。</div>`}
+    <div class="card">
+      <b>設定リンク</b>
+      <div class="sub" style="margin:4px 0 8px">ホーム画面のアプリに設定を移す時に使います</div>
+      <input id="cLink" placeholder="設定リンクを貼り付け" autocomplete="off">
+      <div style="height:8px"></div>
+      <div class="seg" style="margin:0"><button data-a="pasteSetup">読み込む</button><button data-a="copySetup">設定リンクをコピー</button></div>
+    </div>
     <div class="card">
       <b>接続設定</b>
       <label class="f">Apps Script のURL</label><input id="cUrl" value="${esc(S.cfg.url)}" placeholder="https://script.google.com/macros/s/…/exec">
@@ -770,11 +795,22 @@ const ACT = {
     try{ const pos = await here(); const p = byId(d.id); p.plat = pos.lat; p.plng = pos.lng; saveMaster(); enqueue({ a:'note', id:p.id, plat:pos.lat, plng:pos.lng }); toast('駐車位置を保存しました'); render(); }
     catch(e){ toast(e.message); }
   },
-  setDepot: async () => { busy('現在地を取得中…'); try{ S.cfg.depot = await here(); save(); toast('営業所を登録しました'); }catch(e){ toast(e.message); } busy(false); render(); },
+  setDepot: async () => { busy('現在地を取得中…'); try{ S.cfg.depot = await here(); save(); keepSetupInUrl(); toast('営業所を登録しました'); }catch(e){ toast(e.message); } busy(false); render(); },
+  pasteSetup: () => {
+    const r = readSetup($('#cLink').value);
+    if (!r){ toast('設定リンクが読めませんでした'); return; }
+    keepSetupInUrl(); toast('設定を読み込みました'); loadMaster(false); render();
+  },
+  copySetup: async () => {
+    if (!S.cfg.url){ toast('まだ設定がありません'); return; }
+    const link = location.origin + location.pathname + setupHash();
+    try{ await navigator.clipboard.writeText(link); toast('設定リンクをコピーしました'); }
+    catch(e){ const i = $('#cLink'); i.value = link; i.select(); toast('上の欄を長押ししてコピーしてね'); }
+  },
   reload: () => loadMaster(false),
   flushNow: () => { toast('送信しています'); flush().then(() => { if (S.view === 'set') render(); }); },
   resetDay: () => { if (confirm('今日の配達を全部消しますか？（スプレッドシートの記録は残ります）')){ S.day = newDay(); save(); render(); } },
-  saveCfg: () => { S.cfg.url = $('#cUrl').value.trim(); S.cfg.t = $('#cTok').value.trim(); save(); loadMaster(false); }
+  saveCfg: () => { S.cfg.url = $('#cUrl').value.trim(); S.cfg.t = $('#cTok').value.trim(); save(); keepSetupInUrl(); loadMaster(false); }
 };
 document.addEventListener('click', ev => {
   const el = ev.target.closest('[data-a]');
@@ -794,6 +830,8 @@ document.addEventListener('input', ev => {
 
 /* ---------- 起動 ---------- */
 ensureToday();
+keepSetupInUrl();
+if (!S.cfg.url) S.view = 'set';
 if (S.day.active && S.day.trips[S.day.active].status === 'run') S.view = 'go';
 render();
 if (S.cfg.url && (!S.master.length || Date.now() - LS.get('masterAt', 0) > 6*3600*1000)) loadMaster(true);

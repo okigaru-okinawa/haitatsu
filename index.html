@@ -85,6 +85,10 @@ main{padding:10px 16px 0;max-width:560px;margin:0 auto}
 .chip{display:inline-block;font-size:12px;line-height:1;padding:4px 8px;border-radius:6px;background:var(--blue-soft);color:var(--blue);white-space:nowrap;vertical-align:2px;font-weight:600}
 .chip.amber{background:var(--amber-soft);color:var(--amber)}
 .chip.green{background:var(--green-soft);color:var(--green)}
+.chip.red{background:var(--red);color:#fff}
+.memo.closed{background:var(--red);color:#fff}
+.pick{display:flex;flex-wrap:wrap;gap:8px}
+.pick .tag{min-width:52px}
 .grow{flex:1;min-width:0}
 
 /* 配達先の行（路線図ふう）。左スワイプで削除、長押しで並べ替え */
@@ -236,8 +240,7 @@ summary{font-size:14px;color:var(--ink2);padding:8px 4px}
    配達ルートアプリ
    データは端末（localStorage）に保存し、スプレッドシートとは Apps Script 経由で裏で同期する
    ========================================================= */
-const VERSION = 'v12';
-const DWELL_DEFAULT = 6;            // 1件あたりの標準滞在（分）
+const VERSION = 'v13';
 const AUTO_DONE_METERS = 250;       // アプリに戻った時、この距離以内なら自動で完了
 const MAX_WP = 25;                  // Routes API で1回に扱える経由地の上限
 const TAG_LIST = ['裏口','右側','左側','駐車しにくい','駐車場あり','昼休みあり','受付に時間がかかる'];
@@ -537,7 +540,7 @@ function etas(t){
     const leg = curLeg(t, i), sec = leg ? leg.sec : 600;
     tm = (i === t.idx && t.navAt) ? Math.max(now, t.navAt + sec*1000) : tm + sec*1000;
     out.push(tm);
-    const p = byId(t.order[i]); tm += ((p && p.avg) || DWELL_DEFAULT) * 60000;
+    tm += dwellOf(byId(t.order[i])) * 60000;
   }
   const back = curLeg(t, t.order.length), bsec = back ? back.sec : 600;
   const end = (t.idx >= t.order.length && t.navAt) ? Math.max(now, t.navAt + bsec*1000) : tm + bsec*1000;
@@ -648,6 +651,7 @@ const destText = p => (p.plat && p.plng) ? p.plat + ',' + p.plng : encodeURIComp
 const mapsUrl = dest => 'https://www.google.com/maps/dir/?api=1&travelmode=driving&dir_action=navigate&destination=' + dest;
 function navTo(dest){
   const t = curTrip();
+  if (t.breakAt){ const m = Math.max(1, Math.round((Date.now() - t.breakAt) / 60000)); t.breakMin = (t.breakMin || 0) + m; t.breakAt = null; logChange('休憩 ' + m + '分', '', null); }
   settle(t, Date.now());
   if (!t.navAt) t.navAt = Date.now();
   save(); render();
@@ -797,6 +801,19 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const shortAddr = a => String(a||'').replace(/^沖縄県/,'').replace(/^(島尻郡|中頭郡|国頭郡)/,'');
 const tagsOf = p => String(p.tags||'').split(/[,、]/).filter(Boolean);
+const DWELL_CHOICES = [3, 5, 8, 10, 15], DAYS = ['月','火','水','木','金','土'];
+const plainTags = p => tagsOf(p).filter(x => !/^納品\d+分$/.test(x) && !/^午後休:/.test(x));
+const dwellTag = p => { const m = tagsOf(p).map(x => x.match(/^納品(\d+)分$/)).find(Boolean); return m ? Number(m[1]) : null; };
+const closedDays = p => tagsOf(p).filter(x => /^午後休:/.test(x)).map(x => x.slice(4));
+/* 納品にかかる時間（分）：自分で決めた値 → これまでの実測の平均 → 設定の基本値 */
+const dwellOf = p => (p && dwellTag(p)) || (p && p.avg && (p.visits || 0) >= 2 ? p.avg : 0) || S.cfg.dwell || 3;
+/* 今日の午後が休診の所か（午後の便、または12時以降に見ている時） */
+function closedToday(p, shift){
+  const d = new Date(new Date().toLocaleString('en-US', { timeZone:'Asia/Tokyo' }));
+  const wd = '日月火水木金土'[d.getDay()];
+  return (shift === 'pm' || d.getHours() >= 12) && closedDays(p).includes(wd);
+}
+function setTags(p, list){ p.tags = list.join('、'); saveMaster(); enqueue({ a:'note', id:p.id, tags:p.tags }); }
 let toastEl = null;
 function toast(m, act){
   if (toastEl) toastEl.remove();
@@ -807,10 +824,11 @@ function toast(m, act){
 function busy(m){ $('#overlay').innerHTML = m ? `<div class="loading">${esc(m)}</div>` : ''; }
 function setBar(html){ const b = $('#bar'); b.innerHTML = html ? `<div>${html}</div>` : ''; b.hidden = !html; }
 function title(h, aside){ return `<div class="title"><h1>${h}</h1>${aside ? `<div class="aside">${aside}</div>` : ''}</div>`; }
-function memoHtml(p){
-  const tg = tagsOf(p);
-  if (!tg.length && !p.note) return '';
-  return `<div class="memo">${tg.map(x => `<span class="tg">${esc(x)}</span>`).join('')}${p.note ? `<div class="nt">${esc(p.note)}</div>` : ''}</div>`;
+function memoHtml(p, shift){
+  const tg = plainTags(p), cd = closedDays(p), dw = dwellTag(p);
+  const warn = closedToday(p, shift) ? `<div class="memo closed">今日は午後休診の日です。受け取れるか確認を</div>` : '';
+  if (!tg.length && !p.note && !cd.length && !dw) return warn;
+  return warn + `<div class="memo">${tg.map(x => `<span class="tg">${esc(x)}</span>`).join('')}${cd.length ? `<span class="tg">午後休診 ${cd.join('・')}</span>` : ''}${dw ? `<span class="tg">納品 約${dw}分</span>` : ''}${p.note ? `<div class="nt">${esc(p.note)}</div>` : ''}</div>`;
 }
 /* 配達先の1行。o: {id, num, cls, name, addr, side, extra, del:{a,label}, drag, flag} */
 function stopRow(o){
@@ -893,7 +911,7 @@ function vGo(){
   const e = etas(t), total = t.order.length, tab = S.goTab === 'map' ? 'map' : 'list';
   const rowOf = (i, o) => { const id = t.order[i], p = byId(id) || { name:id, addr:'' };
     return stopRow(Object.assign({ id, num: i + 1, name: p.name, addr: shortAddr(p.addr), side: hm(e.list[i]),
-      extra: tagsOf(p).length || p.note ? ' <span class="chip amber">メモ</span>' : '' }, o)); };
+      extra: (closedToday(p, t.shift) ? ' <span class="chip red">午後休診</span>' : '') + (tagsOf(p).length || p.note ? ' <span class="chip amber">メモ</span>' : '') }, o)); };
   const depRow = (label, time, cls) => stopRow({ num: label, cls: 'term ' + cls, name: '営業所', side: time });
   const pick = (a, b) => `<div class="seg"><button data-a="goTab" data-t="list" class="${tab==='list'?'on':''}">${a}</button><button data-a="goTab" data-t="map" class="${tab==='map'?'on':''}">${b}</button></div>`;
 
@@ -952,7 +970,8 @@ function vGo(){
       <div class="figs"><div class="fig"><small>ここから</small><b>${leg ? mins(leg.sec) : '-'}<span>分</span></b></div><div class="fig"><small>着く予定</small><b>${hm(e.list[t.idx])}</b></div>
         <button class="sign-btn" data-a="done">${IC.check}完了にする</button></div>
     </div>
-    ${memoHtml(p)}
+    ${t.breakAt ? `<div class="memo" style="display:flex;align-items:center;gap:10px"><span class="grow">休憩中（${hm(t.breakAt)}から）</span><button class="mini" data-a="breakEnd">休憩を終える</button></div>` : ''}
+    ${memoHtml(p, t.shift)}
     <div style="height:14px"></div>
     ${pick(rest ? `このあと ${rest}件` : 'このあと', '地図')}
     ${tab === 'map' ? `<div id="map" class="tall run"></div>` : rest ? `
@@ -978,7 +997,7 @@ function vRev(){
       <div class="card"><div class="sum"><div><small>出発時の予測</small><b>${hm(t.predEnd)}</b></div><div><small>実際</small><b>${t.endAt ? hm(t.endAt) : '<span>配達中</span>'}</b></div><div><small>ルート変更</small><b>${t.changes}<span>回</span></b></div></div>
       ${hist.includes(t) ? `<button class="as-btn danger" style="font-size:15px;padding:12px;border-top:.5px solid var(--rule)" data-a="delTrip" data-id="${esc(t.id)}">この便の記録を消す</button>` : ''}</div>`).join('')}
     ${all.length ? `<div class="label"><span>回った所のメモ</span><span>タップで書く</span></div>
-      <div class="card">${all.map(({ s, t }) => { const p = byId(s.id) || { name:s.id }; const tg = tagsOf(p), key = t.id + '|' + s.id, open = S.revOpen === key; return `
+      <div class="card">${all.map(({ s, t }) => { const p = byId(s.id) || { name:s.id }; const tg = plainTags(p), key = t.id + '|' + s.id, open = S.revOpen === key; return `
       <div class="rv ${open ? 'open' : ''}">
         <div class="rv-h" data-a="revOpen" data-id="${esc(key)}"><div class="grow"><div class="nm">${esc(p.name)}</div>${tg.length || p.note ? `<div>${tg.map(x => `<span class="chip amber" style="margin-right:4px">${esc(x)}</span>`).join('')}${p.note ? '<span class="chip">備考あり</span>' : ''}</div>` : ''}</div>
           <div class="side">${s.state === 'drop' ? '行かなかった' : (s.dwell != null ? '滞在 約' + s.dwell + '分' : hm(s.doneAt))}</div>${IC.chev}</div>
@@ -1020,6 +1039,8 @@ function vSet(){
       <div class="set"><div class="grow"><div class="k">配達先リスト <span class="n">${S.master.length}</span>件</div><div class="v">${at ? new Date(at).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',month:'numeric',day:'numeric',hour:'numeric',minute:'2-digit'}) + ' に更新' : 'まだ読み込んでいません'}</div></div><button class="mini" data-a="reload">更新</button></div>
       <div class="set"><div class="grow"><div class="k">記録の送信</div><div class="v">${S.queue.length ? '未送信が' + S.queue.length + '件あります' : 'すべて保存済み'}</div></div>${S.queue.length ? `<button class="mini" data-a="flushNow">今すぐ送る</button>` : ''}</div>
     </div>
+    <div class="label"><span>基本の納品時間（1件あたり）</span><span>終わる時刻の計算に使います</span></div>
+    <div class="seg" style="grid-template-columns:repeat(5,1fr)">${[3,4,5,6,8].map(n => `<button data-a="dwellBase" data-n="${n}" class="${(S.cfg.dwell || 3) === n ? 'on' : ''}">${n}分</button>`).join('')}</div>
     <div class="label"><span>画面の色</span></div>
     <div class="seg three">${[['light','明るい'],['dark','暗い'],['auto','自動']].map(([k,l]) => `<button data-a="theme" data-th="${k}" class="${(S.cfg.theme||'light')===k?'on':''}">${l}</button>`).join('')}</div>
     <div class="label"><span>ホーム画面のアプリに設定を移す</span></div>
@@ -1063,11 +1084,15 @@ function renderSheet(){
       <div class="label" style="margin-top:0"><span>メモ（次に行く時、配達の画面に出ます）</span></div>
       <div class="card pad">
         <div class="tags">${TAG_LIST.map(x => `<button class="tag ${tg.includes(x)?'on':''}" data-a="tag" data-tag="${esc(x)}" data-id="${id}">${esc(x)}</button>`).join('')}</div>
-        <textarea data-note="${id}" placeholder="例：駐車場は建物の裏。受付は2階">${esc(p.note||'')}</textarea>
+        <textarea data-note="${id}" placeholder="例：駐車場は建物の裏。受付は2階。検品あり">${esc(p.note||'')}</textarea>
       </div>
+      <div class="label"><span>納品にかかる時間（着いてから車に戻るまで）</span><span>${dwellTag(p) ? '' : (p.avg && (p.visits||0) >= 2 ? 'これまでの平均 約' + Math.round(p.avg) + '分' : '基本 ' + (S.cfg.dwell || 3) + '分')}</span></div>
+      <div class="card pad"><div class="pick">${DWELL_CHOICES.map(n => `<button class="tag ${dwellTag(p) === n ? 'on' : ''}" data-a="dwellSet" data-n="${n}" data-id="${id}">${n}分</button>`).join('')}</div></div>
+      <div class="label"><span>午後が休診の曜日</span><span>その日の午後に行く時、赤く知らせます</span></div>
+      <div class="card pad"><div class="pick">${DAYS.map(d => `<button class="tag ${closedDays(p).includes(d) ? 'on' : ''}" data-a="tag" data-tag="午後休:${d}" data-id="${id}">${d}</button>`).join('')}</div></div>
       <div class="card" style="margin-top:12px">
-        <button class="opt" data-a="park" data-id="${id}">${IC.here}<div><b>${p.plat ? '駐車位置を今の場所に直す' : '今いる場所を駐車位置にする'}</b><span>${p.plat ? '登録済み。ナビはここへ案内します' : '薬局の前にいる時に押すと、ナビの行き先になります'}</span></div></button>
-        <button class="opt" data-a="openMap" data-id="${id}">${IC.nav}<div><b>Googleマップで場所を見る</b></div></button>
+        <button class="opt" data-a="park" data-id="${id}">${IC.here}<div><b>${p.plat ? '駐車位置を今の場所に直す' : '今いる場所を駐車位置にする'}</b><span>${p.plat ? '登録済み。ナビはここへ案内します' : '配達先の前にいる時に押すと、ナビの行き先になります'}</span></div></button>
+        <button class="opt" data-a="openMap" data-id="${id}">${IC.nav}<div><b>Googleマップで営業時間・場所を見る</b><span>今日開いているかを確かめる時に</span></div></button>
         ${acts}
       </div><div style="height:8px"></div>`);
   } else if (S.sheet === 'new'){
@@ -1080,6 +1105,7 @@ function renderSheet(){
       <button class="opt" data-a="rr">${IC.here}<div><b>今いる場所から最短に組み直す</b><span>渋滞や寄り道のあとに</span></div></button>
       <button class="opt" data-a="sheet" data-s="first">${IC.up}<div><b>先に行く配達先を選ぶ</b><span>選んだ所を次にします</span></div></button>
       <button class="opt" data-a="sheet" data-s="add">${IC.plus}<div><b>配達先を追加</b><span>名前で探して、ルートに入れます</span></div></button>
+      <button class="opt" data-a="${t.breakAt ? 'breakEnd' : 'breakStart'}">${IC.note}<div><b>${t.breakAt ? '休憩を終える' : '休憩する'}</b><span>休憩の時間は、納品の時間とは分けて記録します</span></div></button>
       ${cur ? `<button class="opt" data-a="stop" data-id="${cur.id}" data-ctx="cur">${IC.note}<div><b>${esc(cur.name)} のメモを書く</b><span>裏口・駐車場など</span></div></button>
       <button class="opt" data-a="done">${IC.check}<div><b>${esc(cur.name)} を完了にする</b><span>ナビを使わずに配達した時</span></div></button>
       <button class="opt" data-a="drop" data-id="${cur.id}">${IC.ban}<div><b>${esc(cur.name)} は今日行かない</b><span>リストから外します</span></div></button>` : ''}
@@ -1282,9 +1308,20 @@ const ACT = {
   tag: (d, el) => {
     const p = byId(d.id); if (!p) return;
     const tg = tagsOf(p);
-    p.tags = (tg.includes(d.tag) ? tg.filter(x => x !== d.tag) : tg.concat(d.tag)).join('、');
-    saveMaster(); el.classList.toggle('on'); enqueue({ a:'note', id:p.id, tags:p.tags });
+    setTags(p, tg.includes(d.tag) ? tg.filter(x => x !== d.tag) : tg.concat(d.tag)); el.classList.toggle('on');
   },
+  dwellSet: d => {
+    const p = byId(d.id); if (!p) return;
+    const n = Number(d.n), rest = tagsOf(p).filter(x => !/^納品\d+分$/.test(x));
+    setTags(p, dwellTag(p) === n ? rest : rest.concat('納品' + n + '分')); renderSheet();
+  },
+  breakStart: () => { const t = curTrip(); S.sheet = null; settle(t, Date.now()); t.breakAt = Date.now(); save(); render(); },
+  breakEnd: () => {
+    const t = curTrip(); if (!t.breakAt) return;
+    const m = Math.max(1, Math.round((Date.now() - t.breakAt) / 60000));
+    t.breakMin = (t.breakMin || 0) + m; t.breakAt = null; logChange('休憩 ' + m + '分', '', null); save(); render(); toast('休憩 ' + m + '分を記録しました');
+  },
+  dwellBase: d => { S.cfg.dwell = Number(d.n); save(); render(); },
   park: async d => {
     try{ const pos = await here(); const p = byId(d.id); p.plat = pos.lat; p.plng = pos.lng; saveMaster(); enqueue({ a:'note', id:p.id, plat:pos.lat, plng:pos.lng }); toast('駐車位置を保存しました'); render(); }
     catch(e){ toast(e.message); }

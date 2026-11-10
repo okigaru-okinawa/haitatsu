@@ -72,6 +72,8 @@ main{padding:10px 16px 0;max-width:560px;margin:0 auto}
 .search input::placeholder{color:var(--ink3);font-size:16px}
 .clear{border:0;background:var(--rule);color:var(--ink2);width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin-right:6px}
 .clear svg{width:14px;height:14px;color:inherit}
+.nextmemo{background:var(--amber-soft);color:var(--amber);border-radius:12px;padding:8px 12px;margin-bottom:8px;font-size:14px;font-weight:600;line-height:1.4}
+.nextmemo b{display:block;font-size:12px;opacity:.85}
 .newlink{display:flex;align-items:center;gap:6px;border:0;background:transparent;color:var(--blue);font-size:15px;font-weight:600;padding:12px 4px 4px}
 .newlink svg{width:18px;height:18px}
 .quick{display:flex;gap:8px;overflow-x:auto;padding:10px 2px 2px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
@@ -266,7 +268,7 @@ summary{font-size:14px;color:var(--ink2);padding:8px 4px}
    配達ルートアプリ
    データは端末（localStorage）に保存し、スプレッドシートとは Apps Script 経由で裏で同期する
    ========================================================= */
-const VERSION = 'v17';
+const VERSION = 'v18';
 const AUTO_DONE_METERS = 250;       // アプリに戻った時、この距離以内なら自動で完了
 const MAX_WP = 25;                  // Routes API で1回に扱える経由地の上限
 const TAG_LIST = ['裏口','右側','左側','駐車しにくい','駐車場あり','昼休みあり','受付に時間がかかる'];
@@ -1035,8 +1037,10 @@ function vGo(){
       <div class="card"><div data-sort="run">${Array.from({length: show}, (_, k) => rowOf(t.idx + 1 + k, { cls: k === 0 ? 'first' : '', del:{ a:'delRun', label:'行かない' }, drag:true, tap:'run' })).join('')}</div>
       ${show === rest ? depRow('着', hm(e.end), 'last') : ''}</div>
       ${rest > 4 ? `<button class="btn quiet" data-a="toggleAll">${S.showAll ? '少なく表示' : 'あと' + (rest - 4) + '件も見る'}</button>` : ''}` : '<p class="hint" style="text-align:center;margin-top:16px">これが最後の1件です</p>'}`;
+  const nx = byId(t.order[t.idx + 1]), chain = !!S.cfg.chain;
   setBar(going
-    ? `<button class="btn go" data-a="done">${IC.check}<span class="bt"><b>配達完了・次へ</b><small>${esc(p.name)}</small></span></button><div class="more"><button class="btn danger" data-a="closedNow">閉まっていた</button><button class="btn" data-a="nav">ナビを開く</button><button class="btn" data-a="sheet" data-s="change">その他</button></div>`
+    ? `${chain && nx && (plainTags(nx).length || nx.note || closedToday(nx, t.shift)) ? `<div class="nextmemo"><b>つぎの所のメモ</b>${esc(nx.name)}：${esc([...(closedToday(nx, t.shift) ? ['今日は午後休診'] : []), ...plainTags(nx), nx.note].filter(Boolean).join('・'))}</div>` : ''}
+       <button class="btn go" data-a="${chain ? 'doneNav' : 'done'}">${IC.check}<span class="bt"><b>${chain ? '配達完了・次のナビへ' : '配達完了・次へ'}</b><small>${chain ? 'つぎ：' + esc(nx ? nx.name : '営業所へ戻る') : esc(p.name)}</small></span></button><div class="more"><button class="btn danger" data-a="closedNow">閉まっていた</button><button class="btn" data-a="nav">ナビを開く</button><button class="btn" data-a="sheet" data-s="change">その他</button></div>`
     : `<button class="btn primary" data-a="nav">${IC.nav}<span class="bt"><b>ナビ開始</b><small>${esc(p.name)}へ${leg ? '・約' + mins(leg.sec) + '分' : ''}</small></span></button><div class="more"><button class="btn" data-a="later">1つ後に回す</button><button class="btn" data-a="sheet" data-s="change">その他</button></div>`);
 }
 
@@ -1098,6 +1102,8 @@ function vSet(){
     </div>
     <div class="label"><span>基本の納品時間（1件あたり）</span><span>終わる時刻の計算に使います</span></div>
     <div class="seg" style="grid-template-columns:repeat(5,1fr)">${[3,4,5,6,8].map(n => `<button data-a="dwellBase" data-n="${n}" class="${(S.cfg.dwell || 3) === n ? 'on' : ''}">${n}分</button>`).join('')}</div>
+    <div class="label"><span>連続ナビ</span><span>完了を押すと、次のナビをそのまま開く</span></div>
+    <div class="seg"><button data-a="chain" data-on="0" class="${S.cfg.chain ? '' : 'on'}">使わない</button><button data-a="chain" data-on="1" class="${S.cfg.chain ? 'on' : ''}">使う</button></div>
     <div class="label"><span>画面の色</span></div>
     <div class="seg three">${[['light','明るい'],['dark','暗い'],['auto','自動']].map(([k,l]) => `<button data-a="theme" data-th="${k}" class="${(S.cfg.theme||'light')===k?'on':''}">${l}</button>`).join('')}</div>
     <div class="label"><span>ホーム画面のアプリに設定を移す</span></div>
@@ -1359,6 +1365,8 @@ const ACT = {
   rememberClosed: d => { const p = byId(d.id); if (p && !closedDays(p).includes(d.wd)) setTags(p, tagsOf(p).concat('午後休:' + d.wd)); toast(d.wd + '曜の午後休診として覚えました'); render(); },
   closedNow: () => closedNow(),
   done: () => complete(false),
+  /* 連続ナビ：完了にして、そのまま次の所（最後なら営業所）のナビを開く */
+  doneNav: () => { complete(false); const t = curTrip(), np = byId(t.order[t.idx]); navTo(np ? destText(np) : S.cfg.depot.lat + ',' + S.cfg.depot.lng); },
   undoDone: () => undoDone(),
   sheet: d => { if (d.s === 'new') S.newName = d.tok || ''; S.sheet = d.s; renderSheet(); },
   close: () => { const was = S.sheet; S.sheet = null; if (was === 'stop') render(); else renderSheet(); },
@@ -1390,6 +1398,7 @@ const ACT = {
     const m = Math.max(1, Math.round((Date.now() - t.breakAt) / 60000));
     t.breakMin = (t.breakMin || 0) + m; t.breakAt = null; logChange('休憩 ' + m + '分', '', null); save(); render(); toast('休憩 ' + m + '分を記録しました');
   },
+  chain: d => { S.cfg.chain = d.on === '1'; save(); render(); },
   dwellBase: d => { S.cfg.dwell = Number(d.n); save(); render(); },
   park: async d => {
     try{ const pos = await here(); const p = byId(d.id); p.plat = pos.lat; p.plng = pos.lng; saveMaster(); enqueue({ a:'note', id:p.id, plat:pos.lat, plng:pos.lng }); toast('駐車位置を保存しました'); render(); }

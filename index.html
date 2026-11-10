@@ -93,6 +93,8 @@ main{padding:10px 16px 0;max-width:560px;margin:0 auto}
 .memo.closed{background:var(--red);color:#fff}
 .pick{display:flex;flex-wrap:wrap;gap:8px}
 .pick .tag{min-width:52px}
+.pick.days{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
+.pick.days .tag{min-width:0;padding:8px 0;text-align:center}
 .grow{flex:1;min-width:0}
 
 /* 配達先の行（路線図ふう）。左スワイプで削除、長押しで並べ替え */
@@ -209,8 +211,13 @@ main{padding:10px 16px 0;max-width:560px;margin:0 auto}
 
 /* シート・トースト */
 .sheet-bg{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:20;display:flex;align-items:flex-end}
-.sheet{background:var(--paper);width:100%;max-width:560px;margin:0 auto;border-radius:22px 22px 0 0;padding:8px 16px calc(16px + env(safe-area-inset-bottom));max-height:88vh;overflow:auto}
-.sheet::before{content:"";display:block;width:40px;height:5px;border-radius:3px;background:var(--rule);margin:0 auto 12px}
+.sheet{background:var(--paper);width:100%;max-width:560px;margin:0 auto;border-radius:22px 22px 0 0;padding:0 16px calc(16px + env(safe-area-inset-bottom));max-height:88vh;overflow:auto}
+.sheet{transition:transform .22s ease}
+.sheet-top{position:sticky;top:0;z-index:3;display:flex;align-items:center;justify-content:center;height:44px;margin:0 -16px 4px;padding:0 12px;background:var(--paper);border-radius:22px 22px 0 0;touch-action:none}
+.sheet-top .grab{width:40px;height:5px;border-radius:3px;background:var(--ink3);opacity:.5}
+.sheet-x{position:absolute;right:12px;top:7px;width:32px;height:32px;border-radius:50%;border:0;background:var(--rule);color:var(--ink2);display:flex;align-items:center;justify-content:center}
+.sheet-x svg{width:15px;height:15px;stroke-width:2.8}
+.sheet-x:active{transform:scale(.92)}
 .sheet h2{font-size:20px;font-weight:800;margin:0 2px 12px}
 .sheet .sub{font-size:14px;color:var(--ink2);margin:-8px 2px 12px}
 .ask{text-align:center;padding:16px 16px 14px;font-size:14px;color:var(--ink2);border-bottom:.5px solid var(--rule)}
@@ -268,7 +275,7 @@ summary{font-size:14px;color:var(--ink2);padding:8px 4px}
    配達ルートアプリ
    データは端末（localStorage）に保存し、スプレッドシートとは Apps Script 経由で裏で同期する
    ========================================================= */
-const VERSION = 'v19';
+const VERSION = 'v20';
 const AUTO_DONE_METERS = 250;       // アプリに戻った時、この距離以内なら自動で完了
 const MAX_WP = 25;                  // Routes API で1回に扱える経由地の上限
 const TAG_LIST = ['裏口','右側','左側','駐車しにくい','駐車場あり','昼休みあり','受付に時間がかかる'];
@@ -1125,10 +1132,11 @@ function renderSheet(){
   const o = $('#overlay'); if (o.querySelector('.loading')) return;
   if (!S.sheet){ o.innerHTML = ''; return; }
   const t = curTrip();
-  const wrap = body => `<div class="sheet-bg" data-a="close"><div class="sheet">${body}<button class="as-btn cancel" data-a="close">閉じる</button></div></div>`;
+  const top = `<div class="sheet-top"><span class="grab"></span><button class="sheet-x" data-a="close" aria-label="閉じる">${IC.x}</button></div>`;
+  const wrap = body => `<div class="sheet-bg" data-a="close"><div class="sheet">${top}${body}<button class="as-btn cancel" data-a="close">閉じる</button></div></div>`;
   if (S.sheet === 'confirm'){
     const c = S.confirm;
-    o.innerHTML = `<div class="sheet-bg" data-a="close"><div class="sheet"><div class="card"><div class="ask"><b>${esc(c.title)}</b>${esc(c.msg)}</div><button class="as-btn danger" data-a="confirmOk">${esc(c.ok)}</button></div><button class="as-btn cancel" data-a="close">キャンセル</button></div></div>`;
+    o.innerHTML = `<div class="sheet-bg" data-a="close"><div class="sheet">${top}<div class="card"><div class="ask"><b>${esc(c.title)}</b>${esc(c.msg)}</div><button class="as-btn danger" data-a="confirmOk">${esc(c.ok)}</button></div><button class="as-btn cancel" data-a="close">キャンセル</button></div></div>`;
   } else if (S.sheet === 'stop'){
     const id = S.stopId, ctx = S.stopCtx, p = byId(id); if (!p){ S.sheet = null; o.innerHTML = ''; return; }
     const tr = ctx === 'reg' ? S.day.trips[S.shift] : ctx === 'rev' ? ((revDayObj().history || []).find(x => x.id === S.stopTrip) || t) : t, st = tr.stops.find(x => x.id === id) || {}, tg = tagsOf(p);
@@ -1148,7 +1156,7 @@ function renderSheet(){
       <div class="label"><span>納品にかかる時間（着いてから車に戻るまで）</span><span>${st.dwell != null && ctx === 'rev' ? '今回は約' + st.dwell + '分　' : ''}${dwellTag(p) ? '' : (p.avg && (p.visits||0) >= 2 ? 'これまでの平均 約' + Math.round(p.avg) + '分' : '基本 ' + (S.cfg.dwell || 3) + '分')}</span></div>
       <div class="card pad"><div class="pick">${DWELL_CHOICES.map(n => `<button class="tag ${dwellTag(p) === n ? 'on' : ''}" data-a="dwellSet" data-n="${n}" data-id="${id}">${n}分</button>`).join('')}</div></div>
       <div class="label"><span>午後が休診の曜日</span><span>その日の午後に行く時、赤く知らせます</span></div>
-      <div class="card pad"><div class="pick">${DAYS.map(d => `<button class="tag ${closedDays(p).includes(d) ? 'on' : ''}" data-a="tag" data-tag="午後休:${d}" data-id="${id}">${d}</button>`).join('')}</div></div>
+      <div class="card pad"><div class="pick days">${DAYS.map(d => `<button class="tag ${closedDays(p).includes(d) ? 'on' : ''}" data-a="tag" data-tag="午後休:${d}" data-id="${id}">${d}</button>`).join('')}</div></div>
       <div class="card" style="margin-top:12px">
         <button class="opt" data-a="park" data-id="${id}">${IC.here}<div><b>${p.plat ? '駐車位置を今の場所に直す' : '今いる場所を駐車位置にする'}</b><span>${p.plat ? '登録済み。ナビはここへ案内します' : '配達先の前にいる時に押すと、ナビの行き先になります'}</span></div></button>
         <button class="opt" data-a="openMap" data-id="${id}">${IC.nav}<div><b>Googleマップで営業時間・場所を見る</b><span>今日開いているかを確かめる時に</span></div></button>
@@ -1274,6 +1282,29 @@ function endSwipe(e){
 }
 document.addEventListener('pointerup', endSwipe);
 document.addEventListener('pointercancel', () => { if (sw && sw.on){ sw.body.style.transition = ''; sw.body.style.transform = sw.row.classList.contains('open') ? `translateX(${-DEL_W}px)` : ''; } sw = null; });
+
+/* シートは、上のつまみを下に引いても閉じられる */
+let pull = null;
+document.addEventListener('pointerdown', e => {
+  const topEl = e.target.closest('.sheet-top'); if (!topEl || e.target.closest('.sheet-x')) return;
+  pull = { sheet: topEl.parentNode, y: e.clientY, dy: 0, id: e.pointerId };
+  pull.sheet.style.transition = 'none';
+  try{ topEl.setPointerCapture(e.pointerId); }catch(err){}
+});
+document.addEventListener('pointermove', e => {
+  if (!pull || e.pointerId !== pull.id) return;
+  pull.dy = Math.max(0, e.clientY - pull.y);
+  pull.sheet.style.transform = `translateY(${pull.dy}px)`;
+});
+function endPull(e){
+  if (!pull || (e && e.pointerId !== pull.id)) return;
+  const pl = pull; pull = null;
+  pl.sheet.style.transition = '';
+  if (pl.dy > 90){ pl.sheet.style.transform = 'translateY(100%)'; swipedAt = Date.now(); setTimeout(() => ACT.close(), 180); }
+  else pl.sheet.style.transform = '';
+}
+document.addEventListener('pointerup', endPull);
+document.addEventListener('pointercancel', endPull);
 
 /* ---------- 操作 ---------- */
 const ACT = {

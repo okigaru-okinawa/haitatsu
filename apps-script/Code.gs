@@ -46,6 +46,8 @@ function doPost(e) {
       case 'note':   return out_({ ok: true, row: updateNote_(b) });
       case 'visit':  return out_({ ok: true, row: updateVisit_(b) });
       case 'add':    return out_({ ok: true, row: addPharmacy_(b) });
+      case 'delTrip': return out_({ ok: true, n: deleteRecords_(b.id, null) });
+      case 'delStop': return out_({ ok: true, n: deleteRecords_(b.trip, b.id) });
       default:       return out_({ ok: false, error: 'unknown action' });
     }
   } catch (err) {
@@ -135,6 +137,46 @@ function updateVisit_(b) {
     sh.getRange(r, C.visits + 1, 1, 3).setValues([[visits, avg === null ? '' : avg, b.date || '']]);
     return r;
   } finally { lock.releaseLock(); }
+}
+
+/**
+ * 記録を消す（テスト用）。tripId の便の記録を消す。pharmId を渡すと、その便のその薬局の配達記録だけ消す。
+ * 消したあと、関係する薬局の「訪問回数・平均滞在分・最終訪問日」を、残っている配達記録から計算し直す
+ */
+function deleteRecords_(tripId, pharmId) {
+  if (!tripId) throw new Error('trip id');
+  const lock = LockService.getScriptLock(); lock.waitLock(20000);
+  try {
+    const touched = {}; let n = 0;
+    (pharmId ? ['配達記録'] : LOG_SHEETS).forEach(name => {
+      const sh = ss_().getSheetByName(name), v = sh.getDataRange().getValues();
+      for (let i = v.length - 1; i >= 1; i--) {
+        if (String(v[i][0]) !== String(tripId)) continue;
+        if (pharmId && String(v[i][2]) !== String(pharmId)) continue;
+        if (name === '配達記録') touched[String(v[i][2])] = true;
+        sh.deleteRow(i + 1); n++;
+      }
+    });
+    recomputeVisits_(Object.keys(touched));
+    return n;
+  } finally { lock.releaseLock(); }
+}
+function recomputeVisits_(ids) {
+  if (!ids.length) return;
+  const rows = ss_().getSheetByName('配達記録').getDataRange().getValues().slice(1);
+  const sh = ss_().getSheetByName(MASTER);
+  ids.forEach(id => {
+    let visits = 0, sum = 0, cnt = 0, last = '';
+    rows.forEach(r => {
+      if (String(r[2]) !== id || String(r[9]).indexOf('完了') !== 0) return;
+      visits++;
+      const d = Number(r[8]); if (r[8] !== '' && d > 0 && d < 90) { sum += d; cnt++; }
+      const day = r[1] instanceof Date ? Utilities.formatDate(r[1], 'Asia/Tokyo', 'yyyy-MM-dd') : String(r[1]);
+      if (day > last) last = day;
+    });
+    let row; try { row = findRow_(sh, id); } catch (e) { return; }
+    sh.getRange(row, C.visits + 1, 1, 3).setValues([[visits, cnt ? Math.round(sum / cnt * 10) / 10 : '', last]]);
+  });
 }
 
 /** 新しい薬局を追加（住所から位置を求める） */

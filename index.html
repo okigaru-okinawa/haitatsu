@@ -134,7 +134,17 @@ main{padding:10px 16px 0;max-width:560px;margin:0 auto}
 .prevbar{display:flex;align-items:center;gap:10px;background:var(--green-soft);color:var(--green);border-radius:12px;padding:8px 8px 8px 12px;margin-bottom:10px;font-size:14px;font-weight:600}
 .prevbar button{border:0;background:var(--card);color:var(--ink2);border-radius:8px;padding:6px 10px;font-size:13px;flex:none}
 
-#map{height:240px;border-radius:16px;margin-top:10px;z-index:0;background:var(--rule)}
+#map{height:240px;border-radius:12px;z-index:0;background:var(--rule)}
+#map.tall{height:max(300px,calc(100dvh - 470px - env(safe-area-inset-top) - env(safe-area-inset-bottom)))}
+#map.tall.run{height:max(280px,calc(100dvh - 560px))}
+.sign.compact{display:flex;align-items:flex-end;gap:18px;padding:14px 18px;margin-bottom:10px}
+.sign.compact .fig:first-child{margin-right:auto}
+.why{display:flex;align-items:center;gap:8px;width:100%;border:0;background:var(--green-soft);color:var(--green);border-radius:12px;padding:10px 10px 10px 12px;margin-bottom:10px;font-size:14px;font-weight:600;text-align:left}
+.why svg{width:18px;height:18px}.why .lk{font-size:13px;opacity:.9}
+.bt{display:flex;flex-direction:column;align-items:flex-start;line-height:1.25;min-width:0}
+.bt b{font-size:20px;font-weight:800}
+.bt small{font-size:13px;font-weight:500;opacity:.9;max-width:240px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.btn.primary svg.ic,.btn.go svg.ic{width:28px;height:28px}
 .mk{width:26px;height:26px;border-radius:50%;background:#007AFF;color:#fff;font:700 13px/1 var(--num);display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.45)}
 .mk.done{background:#8a919c}.mk.cur{background:#D93A2B}.mk.dep{background:#101820;border-radius:7px;font-size:12px}
 
@@ -142,8 +152,8 @@ main{padding:10px 16px 0;max-width:560px;margin:0 auto}
 .bar{position:fixed;left:0;right:0;bottom:calc(var(--tab) + env(safe-area-inset-bottom));z-index:6;padding:10px 16px 10px;background:linear-gradient(to top,var(--paper) 78%,transparent)}
 .bar>div{max-width:528px;margin:0 auto}
 .btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;border:0;border-radius:14px;background:var(--card);color:var(--ink);font-weight:700;font-size:16px;padding:14px 8px;min-height:50px}
-.btn.primary{background:var(--blue);color:var(--on-blue);font-size:20px;min-height:62px;border-radius:18px}
-.btn.go{background:var(--green);color:#fff;font-size:20px;min-height:62px;border-radius:18px}
+.btn.primary{background:var(--blue);color:var(--on-blue);font-size:20px;min-height:66px;border-radius:18px;gap:12px;box-shadow:0 6px 16px rgba(0,122,255,.28)}
+.btn.go{background:var(--green);color:#fff;font-size:20px;min-height:66px;border-radius:18px;gap:12px;box-shadow:0 6px 16px rgba(36,138,61,.28)}
 .btn.quiet{background:transparent;color:var(--ink2);font-weight:600}
 .btn.danger{color:var(--red)}
 .btn:active{transform:scale(.98);filter:brightness(.96)}
@@ -215,7 +225,7 @@ summary{font-size:14px;color:var(--ink2);padding:8px 4px}
    配達ルートアプリ
    データは端末（localStorage）に保存し、スプレッドシートとは Apps Script 経由で裏で同期する
    ========================================================= */
-const VERSION = 'v7';
+const VERSION = 'v8';
 const DWELL_DEFAULT = 6;            // 1件あたりの標準滞在（分）
 const AUTO_DONE_METERS = 250;       // アプリに戻った時、この距離以内なら自動で完了
 const MAX_WP = 25;                  // Routes API で1回に扱える経由地の上限
@@ -311,7 +321,7 @@ async function api(body){
   if (!S.cfg.url) throw new Error('先に接続設定が必要です');
   const res = await fetch(S.cfg.url, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({...body, t:S.cfg.t}) });
   const j = await res.json();
-  if (!j.ok) throw new Error(j.error || '通信エラー');
+  if (!j.ok){ const e = new Error(j.error || '通信エラー'); e.server = true; throw e; }
   return j;
 }
 async function loadMaster(silent){
@@ -332,14 +342,16 @@ async function flush(){
   if (flushing || !S.queue.length || !S.cfg.url) return;
   flushing = true;
   try{
-    const batch = S.queue.slice(0, 30);
-    const logs = batch.filter(x => x.a === 'log');
-    if (logs.length) await api({ a:'log', items: logs.map(x => ({sheet:x.sheet, row:x.row})) });
-    for (const x of batch.filter(x => x.a !== 'log')) await api(x);
-    S.queue = S.queue.slice(batch.length); LS.set('queue', S.queue);
-    flushing = false;
-    if (S.queue.length) flush();
-  }catch(e){ flushing = false; }
+    while (S.queue.length){
+      const head = S.queue[0];
+      const batch = head.a === 'log' ? S.queue.filter(x => x.a === 'log').slice(0, 30) : [head];
+      try{
+        if (head.a === 'log') await api({ a:'log', items: batch.map(x => ({ sheet:x.sheet, row:x.row })) });
+        else await api(head);
+      }catch(e){ if (!e.server) break; }           // 通信できない時は次の機会に。サーバーが断った分は捨てて先へ進む
+      S.queue = S.queue.filter(x => !batch.includes(x)); LS.set('queue', S.queue);
+    }
+  } finally { flushing = false; }
 }
 window.addEventListener('online', flush);
 
@@ -520,7 +532,10 @@ function etas(t){
   const end = (t.idx >= t.order.length && t.navAt) ? Math.max(now, t.navAt + bsec*1000) : tm + bsec*1000;
   return { list: out, end, backSec: bsec };
 }
-/* 出発前のルートを作る。ids を渡すとその順番のまま（手で並べた順） */
+const legSum = legs => ({ sec: legs.reduce((a, l) => a + l.sec, 0), km: Math.round(legs.reduce((a, l) => a + l.m, 0) / 100) / 10 });
+const fmtDur = sec => { const m = Math.round(sec / 60); return m >= 60 ? `${Math.floor(m / 60)}時間${m % 60 ? (m % 60) + '分' : ''}` : m + '分'; };
+/* 出発前のルートを作る。ids を渡すとその順番のまま（手で並べた順）。
+   最短を作る時は、3通りの回り方を実際の道路（今の混み具合）で計算して、走る時間がいちばん短いものを選ぶ */
 async function buildRoute(shift, ids){
   const t = S.day.trips[shift];
   let items = live(t);
@@ -532,13 +547,31 @@ async function buildRoute(shift, ids){
   if (fixed) items = ids.map(id => items.find(s => s.id === id)).filter(Boolean);
   const noPos = items.filter(s => { const p = byId(s.id); return !p || !p.lat; });
   if (noPos.length) toast(noPos.length + '件は場所が分からないので外しました');
+  items = items.filter(s => !noPos.includes(s));
   if (toastEl) toastEl.remove();
-  busy(fixed ? '時間を計算中…' : '最短ルートを計算中…');
+  busy(fixed ? '時間を計算中…' : '回り方を比べています…');
   try{
-    const r = await planRoute(S.cfg.depot, items.filter(s => !noPos.includes(s)), S.cfg.depot, fixed);
-    Object.assign(t, { order: r.order, legs: r.legs, legBase: 0, idx: 0, status: 'ready', navAt: null, manual: fixed,
-                       km: Math.round(r.legs.reduce((a,l) => a + l.m, 0) / 100) / 10 });
-    S.day.active = shift; S.view = 'go'; S.sheet = null; save();
+    const dep = S.cfg.depot;
+    let best, proof = null;
+    if (fixed || items.length < 3){
+      best = await planRoute(dep, items, dep, fixed);
+    } else {
+      const pins = items.filter(s => s.pin), free = items.filter(s => !s.pin);
+      const from = pins.length ? pt(byId(pins[pins.length-1].id)) : dep;
+      const near = [...pins, ...roughTour(from, free.map(s => byId(s.id))).map(p => free.find(s => s.id === p.id))];
+      const tries = await Promise.all([
+        planRoute(dep, items, dep, false),
+        planRoute(dep, near, dep, true).catch(() => null),
+        planRoute(dep, items, dep, true).catch(() => null)
+      ]);
+      const labels = ['Googleが並べた順', '近い所から回る順', '登録した順'];
+      proof = tries.map((r, i) => r ? Object.assign({ label: labels[i], usable: i < 2 || !pins.length }, legSum(r.legs)) : null);
+      let bi = 0;
+      tries.forEach((r, i) => { if (r && proof[i].usable && proof[i].sec < proof[bi].sec) bi = i; });
+      best = tries[bi]; proof = proof.map((x, i) => x && Object.assign(x, { chosen: i === bi })).filter(Boolean);
+    }
+    Object.assign(t, { order: best.order, legs: best.legs, legBase: 0, idx: 0, status: 'ready', navAt: null, manual: fixed, proof, km: legSum(best.legs).km });
+    S.day.active = shift; S.view = 'go'; S.goTab = 'list'; S.sheet = null; save();
   }catch(e){ toast(e.message === 'Failed to fetch' ? '通信できませんでした。電波を確認してね' : e.message); }
   busy(false); render();
 }
@@ -665,7 +698,7 @@ function closeTrip(t, stale){
 }
 function finishTrip(){
   closeTrip(curTrip(), false);
-  S.view = 'rev'; S.revDay = 'today'; S.sheet = null; S.showMap = false; render(); window.scrollTo(0, 0);
+  S.view = 'rev'; S.revDay = 'today'; S.sheet = null; S.goTab = 'list'; render(); window.scrollTo(0, 0);
   toast('おつかれさまでした');
 }
 function logChange(kind, id, pos){
@@ -813,7 +846,8 @@ function refreshReg(){
                 : '<p class="hint">タップでメモや操作、左にスワイプで削除、長押しして動かすと並べ替え。</p>'}`
     : `<div class="empty"><b>伝票の薬局を入れていこう</b>上の検索に名前を入れると候補が出ます。<br>マイクで「とまと薬局、大城薬局」と続けて言っても大丈夫。</div>`;
   if (!S.master.length) $('#regList').innerHTML += `<div class="memo">薬局リストがまだありません。「設定」で設定リンクを読み込んでください。</div>`;
-  setBar(running ? `<button class="btn primary" data-a="tab" data-v="go">配達の画面へ</button><div class="more"><button class="btn danger" data-a="cancelTrip">この便をやめる</button></div>`
+  const nx = running && byId(t.order[t.idx]);
+  setBar(running ? `<button class="btn primary" data-a="tab" data-v="go">${IC.nav}<span class="bt"><b>配達に戻る</b><small>${nx ? '次は ' + esc(nx.name) : '営業所へ戻る'}</small></span></button><div class="more"><button class="btn danger" data-a="cancelTrip">この便をやめる</button></div>`
        : stops.length ? `<button class="btn primary" data-a="build">最短ルートを作る</button><div class="more"><button class="btn" data-a="buildFixed">この順で行く</button><button class="btn" data-a="move">${shiftName(S.shift==='am'?'pm':'am')}に移す</button><button class="btn danger" data-a="clearAll">すべて消す</button></div>` : '');
   initSort();
 }
@@ -840,31 +874,31 @@ function vGo(){
     $('#main').innerHTML = title('配達') + `<div class="empty"><b>${n ? 'ルートを作ると、ここに出ます' : 'まだ配達先がありません'}</b>「登録」で今日の薬局を入れて、ルートを作ってね。</div>`;
     setBar(`<button class="btn primary" data-a="tab" data-v="reg">登録へ</button>`); return;
   }
-  const e = etas(t), total = t.order.length;
+  const e = etas(t), total = t.order.length, tab = S.goTab === 'map' ? 'map' : 'list';
   const rowOf = (i, o) => { const id = t.order[i], p = byId(id) || { name:id, addr:'' };
     return stopRow(Object.assign({ id, num: i + 1, name: p.name, addr: shortAddr(p.addr), side: hm(e.list[i]),
       extra: tagsOf(p).length || p.note ? ' <span class="chip amber">メモ</span>' : '' }, o)); };
   const depRow = (label, time, cls) => stopRow({ num: label, cls: 'term ' + cls, name: '営業所', side: time });
+  const pick = (a, b) => `<div class="seg"><button data-a="goTab" data-t="list" class="${tab==='list'?'on':''}">${a}</button><button data-a="goTab" data-t="map" class="${tab==='map'?'on':''}">${b}</button></div>`;
 
   if (t.status === 'ready'){
-    $('#main').innerHTML = title(shiftName(shift) + 'のルート', t.manual ? '手で並べた順' : '最短の順') + `
-      <div class="sign">
-        <div class="eyebrow"><span>今出発すると、終わるのは</span></div>
-        <div class="figs" style="border:0;margin-top:2px;padding-top:0">
-          <div class="fig"><b style="font-size:46px">${hm(e.end)}</b></div>
-          <div class="fig" style="margin-left:auto"><small>件数</small><b>${total}<span>件</span></b></div>
-          <div class="fig"><small>道のり</small><b>${t.km ?? '-'}<span>km</span></b></div>
-        </div>
+    const pf = t.proof, ch = pf && pf.find(x => x.chosen), entry = pf && pf.find(x => x.label === '登録した順');
+    const gain = ch && entry && entry !== ch ? Math.round((entry.sec - ch.sec) / 60) : 0;
+    $('#main').innerHTML = title(shiftName(shift) + 'のルート', t.manual ? '自分で並べた順' : '') + `
+      <div class="sign compact">
+        <div class="fig"><small>今出ると、戻るのは</small><b style="font-size:40px">${hm(e.end)}</b></div>
+        <div class="fig"><small>件数</small><b>${total}<span>件</span></b></div>
+        <div class="fig"><small>道のり</small><b>${t.km ?? '-'}<span>km</span></b></div>
       </div>
-      <div id="map"></div>
-      <div class="label"><span>回る順番</span><span>着く予定</span></div>
-      <div class="card">
+      ${pf ? `<button class="why" data-a="sheet" data-s="proof">${IC.check}<span class="grow">${gain > 0 ? `登録した順より <b>${gain}分</b> 早い回り方です` : '比べた中で、いちばん早い回り方です'}</span><span class="lk">根拠</span>${IC.chev}</button>` : ''}
+      ${pick('順番', '地図')}
+      ${tab === 'map' ? `<div id="map" class="tall"></div>` : `<div class="card">
         ${depRow('発', '', 'first')}
         <div data-sort="ready">${t.order.map((_, i) => rowOf(i, { del:{ a:'delReady', label:'外す' }, drag:true, tap:'ready' })).join('')}</div>
         ${depRow('着', hm(e.end), 'last')}
       </div>
-      <p class="hint">タップでメモ、長押しして動かすと入れ替え、左にスワイプで外せます。高速・有料道路は使いません。</p>`;
-    setBar(`<button class="btn primary" data-a="start">${IC.nav}出発する</button><div class="more"><button class="btn" data-a="sheet" data-s="add">薬局を追加</button>${t.manual ? `<button class="btn" data-a="rebuild">最短に並べ直す</button>` : `<button class="btn" data-a="edit">登録に戻る</button>`}</div>`);
+      <p class="hint">タップでメモ、長押しして動かすと入れ替え、左にスワイプで外せます。高速・有料道路は使いません。</p>`}`;
+    setBar(`<button class="btn primary" data-a="start">${IC.nav}<span class="bt"><b>出発する</b><small>1件目 ${esc((byId(t.order[0]) || {}).name || '')}</small></span></button><div class="more"><button class="btn" data-a="sheet" data-s="add">薬局を追加</button>${t.manual ? `<button class="btn" data-a="rebuild">最短に並べ直す</button>` : `<button class="btn" data-a="edit">登録に戻る</button>`}</div>`);
     return;
   }
 
@@ -872,61 +906,81 @@ function vGo(){
   const id = t.order[t.idx];
   const prevId = t.pending && t.idx > 0 && t.order[t.idx - 1] === t.pending ? t.pending : null, prev = prevId && byId(prevId);
   const steps = total <= 40 ? `<div class="steps">${t.order.map((_, i) => `<i class="${i < t.idx ? 'd' : i === t.idx ? 'c' : ''}"></i>`).join('')}</div>` : '';
-  const head = title(`${Math.min(t.idx + 1, total)}<span style="font-size:18px;font-weight:600;color:var(--ink2)"> / ${total}件目</span>`, `終わる予定 <b class="n" style="font-size:20px;color:var(--ink)">${hm(e.end)}</b>`) + steps
+  const head = title(`${Math.min(t.idx + 1, total)}<span style="font-size:18px;font-weight:600;color:var(--ink2)"> / ${total}件目</span>`, `戻る予定 <b class="n" style="font-size:20px;color:var(--ink)">${hm(e.end)}</b>`) + steps
     + (prev ? `<div class="prevbar"><span class="grow">✓ ${esc(prev.name)} 完了</span><button data-a="undoDone">まだだった</button></div>` : '');
-  const mapPart = S.showMap ? '<div id="map"></div>' : '';
 
   if (!id){
     $('#main').innerHTML = head + `
       <div class="sign"><div class="eyebrow"><span>全部まわりました</span></div><div class="name">営業所へ戻る</div>
-        <div class="figs"><div class="fig"><small>ここから</small><b>${mins(e.backSec)}<span>分</span></b></div><div class="fig"><small>着く予定</small><b>${hm(e.end)}</b></div></div></div>` + mapPart;
-    setBar(`<button class="btn primary" data-a="navDepot">${IC.nav}ナビ開始</button><div class="more"><button class="btn" data-a="finish">便を終える</button><button class="btn" data-a="sheet" data-s="add">薬局を追加</button></div>`);
+        <div class="figs"><div class="fig"><small>ここから</small><b>${mins(e.backSec)}<span>分</span></b></div><div class="fig"><small>着く予定</small><b>${hm(e.end)}</b></div></div></div>`;
+    setBar(`<button class="btn primary" data-a="navDepot">${IC.nav}<span class="bt"><b>ナビ開始</b><small>営業所へ・約${mins(e.backSec)}分</small></span></button><div class="more"><button class="btn" data-a="finish">便を終える</button><button class="btn" data-a="sheet" data-s="add">薬局を追加</button></div>`);
     return;
   }
   const p = byId(id) || { name:id, addr:'' }, leg = curLeg(t, t.idx), going = !!t.navAt;
-  const rest = total - t.idx - 1, show = S.showAll ? rest : Math.min(3, rest);
+  const rest = total - t.idx - 1, show = S.showAll ? rest : Math.min(4, rest);
   $('#main').innerHTML = head + `
-    <div class="sign">
+    <div class="sign" data-a="stop" data-id="${id}" data-ctx="cur">
       <div class="eyebrow"><span>${going ? '向かっている配達先' : '次の配達先'}</span></div>
       <div class="name">${esc(p.name)}</div>
       <div class="addr">${esc(shortAddr(p.addr))}</div>
       <div class="figs"><div class="fig"><small>ここから</small><b>${leg ? mins(leg.sec) : '-'}<span>分</span></b></div><div class="fig"><small>着く予定</small><b>${hm(e.list[t.idx])}</b></div></div>
     </div>
     ${memoHtml(p)}
-    ${mapPart}
-    ${rest ? `<div class="label"><span>このあと ${rest}件</span><span>着く予定</span></div>
+    <div style="height:14px"></div>
+    ${pick(rest ? `このあと ${rest}件` : 'このあと', '地図')}
+    ${tab === 'map' ? `<div id="map" class="tall run"></div>` : rest ? `
       <div class="card"><div data-sort="run">${Array.from({length: show}, (_, k) => rowOf(t.idx + 1 + k, { cls: k === 0 ? 'first' : '', del:{ a:'delRun', label:'行かない' }, drag:true, tap:'run' })).join('')}</div>
       ${show === rest ? depRow('着', hm(e.end), 'last') : ''}</div>
-      ${rest > 3 ? `<button class="btn quiet" data-a="toggleAll">${S.showAll ? '少なく表示' : 'あと' + (rest - 3) + '件も見る'}</button>` : ''}` : '<p class="hint" style="text-align:center;margin-top:16px">これが最後の1件です</p>'}`;
+      ${rest > 4 ? `<button class="btn quiet" data-a="toggleAll">${S.showAll ? '少なく表示' : 'あと' + (rest - 4) + '件も見る'}</button>` : ''}` : '<p class="hint" style="text-align:center;margin-top:16px">これが最後の1件です</p>'}`;
   setBar(going
-    ? `<button class="btn go" data-a="done">${IC.check}配達完了・次へ</button><div class="more"><button class="btn" data-a="nav">ナビに戻る</button><button class="btn" data-a="later">後回し</button><button class="btn" data-a="sheet" data-s="change">その他</button></div>`
-    : `<button class="btn primary" data-a="nav">${IC.nav}ナビ開始</button><div class="more"><button class="btn" data-a="later">後回し</button><button class="btn" data-a="toggleMap">${S.showMap ? '地図を閉じる' : '地図'}</button><button class="btn" data-a="sheet" data-s="change">その他</button></div>`);
+    ? `<button class="btn go" data-a="done">${IC.check}<span class="bt"><b>配達完了・次へ</b><small>${esc(p.name)}</small></span></button><div class="more"><button class="btn" data-a="nav">ナビに戻る</button><button class="btn" data-a="later">後回し</button><button class="btn" data-a="sheet" data-s="change">その他</button></div>`
+    : `<button class="btn primary" data-a="nav">${IC.nav}<span class="bt"><b>ナビ開始</b><small>${esc(p.name)}へ${leg ? '・約' + mins(leg.sec) + '分' : ''}</small></span></button><div class="more"><button class="btn" data-a="later">後回し</button><button class="btn" data-a="sheet" data-s="change">その他</button></div>`);
 }
 
 /* ---------- 振り返り ---------- */
+function revDayObj(){ const prev = LS.get('prevDay', null); return (S.revDay === 'prev' && prev) ? prev : S.day; }
 function vRev(){
   const prev = LS.get('prevDay', null);
-  const day = (S.revDay === 'prev' && prev) ? prev : S.day;
-  const trips = [...(day.history || []), ...['am','pm'].map(k => day.trips[k]).filter(t => t.startAt)];
-  const all = trips.flatMap(t => t.stops.filter(s => s.state === 'done' || s.state === 'drop').sort((a, b) => (a.seq || 999) - (b.seq || 999)));
+  const day = revDayObj();
+  const hist = day.history || [];
+  const trips = [...hist, ...['am','pm'].map(k => day.trips[k]).filter(t => t.startAt)];
+  const all = trips.flatMap(t => t.stops.filter(s => s.state === 'done' || s.state === 'drop').sort((a, b) => (a.seq || 999) - (b.seq || 999)).map(s => ({ s, t })));
   $('#main').innerHTML = title('振り返り', S.queue.length ? `<span class="chip amber">未送信 ${S.queue.length}</span>` : '<span class="chip green">保存済み</span>') + `
     ${prev ? `<div class="seg"><button data-a="revDay" data-d="today" class="${day===S.day?'on':''}">今日</button><button data-a="revDay" data-d="prev" class="${day===S.day?'':'on'}">前回 ${esc(dateLabel(prev.date).replace(/（.*/, ''))}</button></div>` : ''}
-    ${trips.map(t => `<div class="label"><span>${shiftName(t.shift)}の便</span><span>${t.stops.filter(s => s.state === 'done').length}件 完了</span></div>
-      <div class="card"><div class="sum"><div><small>出発時の予測</small><b>${hm(t.predEnd)}</b></div><div><small>実際</small><b>${t.endAt ? hm(t.endAt) : '<span>配達中</span>'}</b></div><div><small>ルート変更</small><b>${t.changes}<span>回</span></b></div></div></div>`).join('')}
+    ${trips.map(t => `<div class="label"><span>${shiftName(t.shift)}の便　${hm(t.startAt)} 出発</span><span>${t.stops.filter(s => s.state === 'done').length}件 完了</span></div>
+      <div class="card"><div class="sum"><div><small>出発時の予測</small><b>${hm(t.predEnd)}</b></div><div><small>実際</small><b>${t.endAt ? hm(t.endAt) : '<span>配達中</span>'}</b></div><div><small>ルート変更</small><b>${t.changes}<span>回</span></b></div></div>
+      ${hist.includes(t) ? `<button class="as-btn danger" style="font-size:15px;padding:12px;border-top:.5px solid var(--rule)" data-a="delTrip" data-id="${esc(t.id)}">この便の記録を消す</button>` : ''}</div>`).join('')}
     ${all.length ? `<div class="label"><span>回った薬局のメモ</span><span>タップで書く</span></div>
-      <div class="card">${all.map(s => { const p = byId(s.id) || { name:s.id }; const tg = tagsOf(p), open = S.revOpen === s.id; return `
+      <div class="card">${all.map(({ s, t }) => { const p = byId(s.id) || { name:s.id }; const tg = tagsOf(p), key = t.id + '|' + s.id, open = S.revOpen === key; return `
       <div class="rv ${open ? 'open' : ''}">
-        <div class="rv-h" data-a="revOpen" data-id="${s.id}"><div class="grow"><div class="nm">${esc(p.name)}</div>${tg.length || p.note ? `<div>${tg.map(x => `<span class="chip amber" style="margin-right:4px">${esc(x)}</span>`).join('')}${p.note ? '<span class="chip">備考あり</span>' : ''}</div>` : ''}</div>
+        <div class="rv-h" data-a="revOpen" data-id="${esc(key)}"><div class="grow"><div class="nm">${esc(p.name)}</div>${tg.length || p.note ? `<div>${tg.map(x => `<span class="chip amber" style="margin-right:4px">${esc(x)}</span>`).join('')}${p.note ? '<span class="chip">備考あり</span>' : ''}</div>` : ''}</div>
           <div class="side">${s.state === 'drop' ? '行かなかった' : (s.dwell != null ? '滞在 約' + s.dwell + '分' : hm(s.doneAt))}</div>${IC.chev}</div>
         ${open ? `<div class="rv-b">
           <div class="tags">${TAG_LIST.map(x => `<button class="tag ${tg.includes(x)?'on':''}" data-a="tag" data-tag="${esc(x)}" data-id="${s.id}">${esc(x)}</button>`).join('')}</div>
           <textarea data-note="${s.id}" placeholder="気づいたこと（マイクで話してもOK）">${esc(p.note||'')}</textarea>
-          <div class="more" style="margin-top:10px"><button class="btn" data-a="park" data-id="${s.id}">${IC.here}${p.plat ? '駐車位置を今の場所に直す' : '今いる場所を駐車位置にする'}</button></div>
+          <div class="more" style="margin-top:10px"><button class="btn" data-a="park" data-id="${s.id}">${IC.here}${p.plat ? '駐車位置を直す' : '今の場所を駐車位置に'}</button>${hist.includes(t) ? `<button class="btn danger" data-a="delStop" data-id="${s.id}" data-trip="${esc(t.id)}">この記録を消す</button>` : ''}</div>
         </div>` : ''}
       </div>`; }).join('')}</div>
-      <p class="hint">書いたメモは、次にその薬局へ行く時に配達の画面に出ます。</p>`
+      <p class="hint">メモは、次にその薬局へ行く時に配達の画面に出ます。記録を消しても、メモは残ります。</p>
+      ${hist.length ? `<button class="btn quiet danger" data-a="delDay" style="margin-top:8px">この日の記録をすべて消す</button>` : ''}`
     : `<div class="empty"><b>まだ回った薬局がありません</b>配達が終わると、ここで薬局ごとのメモを書けます。</div>`}`;
   setBar('');
+}
+/* 記録を消す（テスト用）。スプレッドシート側も消して、訪問回数と平均滞在を計算し直す */
+async function eraseRecords(body, doneMsg, localFn){
+  busy('記録を消しています…');
+  try{
+    await api(body);
+    localFn(); busy(false); toast(doneMsg); loadMaster(true); render();
+  }catch(e){
+    busy(false);
+    toast(e.server && /unknown action/.test(e.message) ? 'スプレッドシート側の更新がまだです（Apps Scriptを新しくしてね）' : '通信できなかったので、消せませんでした');
+  }
+}
+function dropLocalTrip(day, id){
+  day.history = (day.history || []).filter(t => t.id !== id);
+  S.queue = S.queue.filter(x => !(x.a === 'log' && x.row && x.row[0] === id)); LS.set('queue', S.queue);
+  if (day === S.day) save(); else LS.set('prevDay', day);
 }
 
 /* ---------- 設定 ---------- */
@@ -1002,9 +1056,14 @@ function renderSheet(){
       ${cur ? `<button class="opt" data-a="stop" data-id="${cur.id}" data-ctx="cur">${IC.note}<div><b>${esc(cur.name)} のメモを書く</b><span>裏口・駐車場など</span></div></button>
       <button class="opt" data-a="done">${IC.check}<div><b>${esc(cur.name)} を完了にする</b><span>ナビを使わずに配達した時</span></div></button>
       <button class="opt" data-a="drop" data-id="${cur.id}">${IC.ban}<div><b>${esc(cur.name)} は今日行かない</b><span>リストから外します</span></div></button>` : ''}
-      <button class="opt" data-a="toggleMap">${IC.nav}<div><b>${S.showMap ? '地図を閉じる' : '地図を見る'}</b><span>残りの配達先を地図で確認</span></div></button>
       <button class="opt" data-a="cancelTrip" style="color:var(--red)">${IC.x.replace('class="ic"','class="ic" style="color:var(--red)"')}<div><b>この便をやめる</b><span>登録の画面に戻って、やり直します</span></div></button>
     </div><div style="height:8px"></div>`);
+  } else if (S.sheet === 'proof'){
+    const pf = t.proof || [];
+    o.innerHTML = wrap(`<h2>この順番にした根拠</h2><div class="sub">今の道路の混み具合で、回り方を${pf.length}通り計算しました。走る時間がいちばん短いものを選んでいます。</div>
+      <div class="card">${pf.map(x => `<div class="set"><div class="grow"><div class="k">${x.chosen ? '✓ ' : ''}${esc(x.label)}</div><div class="v">${x.km}km${x.usable ? '' : '　「最初に行く」の指定を守れないので対象外'}</div></div><b class="n" style="font-size:22px;color:${x.chosen ? 'var(--blue)' : 'var(--ink2)'}">${fmtDur(x.sec)}</b></div>`).join('')}</div>
+      <p class="hint">時間は走っている時間だけの合計です（薬局での時間は別）。高速・有料道路は使わない条件です。道路の状況は変わるので、途中で遅れたら「その他」→「今いる場所から最短に組み直す」で計算し直せます。</p>
+      <p class="hint">自分の順番で行きたい時は、一覧を長押しで入れ替えると、その順番の時間が出ます。</p><div style="height:8px"></div>`);
   } else if (S.sheet === 'first'){
     o.innerHTML = wrap(`<h2>先に行く薬局を選ぶ</h2><div class="card noline">${t.order.slice(t.idx).map((id, i) => `<div data-a="first" data-id="${id}">${stopRow({ num: t.idx + i + 1, name: byId(id)?.name || id })}</div>`).join('')}</div><div style="height:8px"></div>`);
   } else if (S.sheet === 'add'){
@@ -1098,7 +1157,7 @@ document.addEventListener('pointercancel', () => { if (sw && sw.on){ sw.body.sty
 
 /* ---------- 操作 ---------- */
 const ACT = {
-  tab: d => { if (toastEl) toastEl.remove(); S.view = d.v; S.sheet = null; if (d.v === 'go') S.showAll = false; if (d.v === 'reg' && S.day.active) S.shift = S.day.active; render(); window.scrollTo(0, 0); },
+  tab: d => { if (toastEl) toastEl.remove(); S.view = d.v; S.sheet = null; if (d.v === 'go'){ S.showAll = false; S.goTab = 'list'; } if (d.v === 'reg' && S.day.active) S.shift = S.day.active; render(); window.scrollTo(0, 0); },
   shift: d => { S.shift = d.s; render(); },
   clearQ: () => { S.q = ''; refreshReg(); $('#q').focus({ preventScroll:true }); },
   add: d => {
@@ -1170,7 +1229,10 @@ const ACT = {
   drop: d => { S.sheet = null; dropStop(d.id); },
   addrun: d => { S.sheet = null; renderSheet(); addToTrip(curTrip(), d.id); },
   toggleAll: () => { S.showAll = !S.showAll; render(); },
-  toggleMap: () => { S.showMap = !S.showMap; S.sheet = null; render(); if (S.showMap) setTimeout(() => { const m = document.getElementById('map'); if (m) m.scrollIntoView({ behavior:'smooth', block:'center' }); }, 60); },
+  goTab: d => { S.goTab = d.t; render(); },
+  delTrip: d => ask('この便の記録を消しますか？', '端末とスプレッドシートの両方から消えます。薬局のメモは残ります。', '記録を消す', () => { const day = revDayObj(); eraseRecords({ a:'delTrip', id: d.id }, '記録を消しました', () => dropLocalTrip(day, d.id)); }),
+  delStop: d => ask('この配達の記録を消しますか？', '訪問回数と滞在時間の平均も計算し直します。メモは残ります。', '記録を消す', () => { const day = revDayObj(); eraseRecords({ a:'delStop', trip: d.trip, id: d.id }, '記録を消しました', () => { const t = (day.history || []).find(x => x.id === d.trip); if (t) t.stops = t.stops.filter(x => x.id !== d.id); if (day === S.day) save(); else LS.set('prevDay', day); }); }),
+  delDay: () => ask('この日の記録をすべて消しますか？', '端末とスプレッドシートの両方から消えます。薬局のメモは残ります。', 'すべて消す', async () => { const day = revDayObj(); for (const t of (day.history || []).slice()) await eraseRecords({ a:'delTrip', id: t.id }, '記録を消しました', () => dropLocalTrip(day, t.id)); }),
   revDay: d => { S.revDay = d.d; S.revOpen = null; render(); },
   revOpen: d => { S.revOpen = S.revOpen === d.id ? null : d.id; render(); },
   tag: (d, el) => {

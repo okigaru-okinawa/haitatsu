@@ -200,21 +200,71 @@ function geocode_(addr) {
   return { lat: loc.lat, lng: loc.lng };
 }
 
-/** 【最初に1回だけ手で実行】緯度経度が空の薬局を、住所から埋める */
-function 位置をまとめて取得() {
+/**
+ * 【手で実行】病院・クリニック・歯科を「薬局マスタ」に取り込む（九州厚生局の保険医療機関一覧がもと）
+ * - まだ無い施設は行を追加する
+ * - すでにある施設は、名前・住所・電話が変わっていれば直す（住所が変わったら位置も取り直す）
+ * - そのあと、位置が空の行を住所からまとめて埋める
+ * 何回実行しても大丈夫。メモ・タグ・訪問回数は消えない
+ */
+function 配達先を取り込む() {
+  const url = 'https://okigaru-okinawa.github.io/haitatsu/facilities.json?t=' + Date.now();
+  const list = JSON.parse(UrlFetchApp.fetch(url).getContentText());
   const sh = ss_().getSheetByName(MASTER);
   const v = sh.getDataRange().getValues();
-  let done = 0, fail = [];
+  const rowOf = {};
+  for (let i = 1; i < v.length; i++) rowOf[String(v[i][C.id])] = i;
+  const adds = []; let changed = 0;
+  list.forEach(f => {
+    const i = rowOf[f.id];
+    const src = '九州厚生局(' + f.kind + ')';
+    if (i === undefined) { adds.push([f.id, f.name, '', f.addr, f.tel, '', '', '', '', '', '', 0, '', '', src]); return; }
+    const r = v[i]; let hit = false;
+    if (String(r[C.name]) !== f.name) { sh.getRange(i + 1, C.name + 1).setValue(f.name); hit = true; }
+    if (String(r[C.tel]) !== f.tel) { sh.getRange(i + 1, C.tel + 1).setNumberFormat('@').setValue(f.tel); hit = true; }
+    if (String(r[C.addr]) !== f.addr) { sh.getRange(i + 1, C.addr + 1).setValue(f.addr); sh.getRange(i + 1, C.lat + 1, 1, 2).clearContent(); hit = true; }
+    if (hit) changed++;
+  });
+  if (adds.length) {
+    const start = sh.getLastRow() + 1;
+    sh.getRange(start, 1, adds.length, 1).setNumberFormat('@');
+    sh.getRange(start, C.tel + 1, adds.length, 1).setNumberFormat('@');
+    sh.getRange(start, 1, adds.length, adds[0].length).setValues(adds);
+  }
+  Logger.log('追加: ' + adds.length + '件 / 変更: ' + changed + '件');
+  位置をまとめて取得();
+}
+
+/** 【手で実行】緯度経度が空（または0）の行を、住所からまとめて埋める。途中で時間切れになったら、もう一度実行する */
+function 位置をまとめて取得() {
+  const key = props_().getProperty('API_KEY');
+  const sh = ss_().getSheetByName(MASTER);
+  const v = sh.getDataRange().getValues();
+  const todo = [];
   for (let i = 1; i < v.length; i++) {
     const la = Number(v[i][C.lat]);
-    if (v[i][C.lat] !== '' && v[i][C.lat] !== null && la > 20) continue; // 0 や空は取り直す
-    if (!v[i][C.addr]) continue;
-    const g = geocode_(String(v[i][C.addr]));
-    if (g) { sh.getRange(i + 1, C.lat + 1, 1, 2).setValues([[g.lat, g.lng]]); done++; }
-    else fail.push(v[i][C.name]);
-    Utilities.sleep(60);
+    if (v[i][C.lat] !== '' && v[i][C.lat] !== null && la > 20) continue;
+    if (v[i][C.addr]) todo.push(i);
   }
-  Logger.log('位置を入れた件数: ' + done + ' / 失敗: ' + fail.length + ' ' + fail.join('、'));
+  const started = Date.now(); let done = 0; const fail = [];
+  for (let k = 0; k < todo.length; k += 20) {
+    if (Date.now() - started > 4.5 * 60 * 1000) break;          // 実行時間の上限（6分）の手前で止める
+    const part = todo.slice(k, k + 20);
+    const res = UrlFetchApp.fetchAll(part.map(i => ({
+      url: 'https://maps.googleapis.com/maps/api/geocode/json?language=ja&region=jp&address=' + encodeURIComponent(String(v[i][C.addr])) + '&key=' + key,
+      muteHttpExceptions: true
+    })));
+    res.forEach((r, n) => {
+      const i = part[n]; let loc = null;
+      try { const j = JSON.parse(r.getContentText()); if (j.status === 'OK' && j.results.length) loc = j.results[0].geometry.location; } catch (e) {}
+      // 沖縄県の範囲に入っているものだけ採用する
+      if (loc && loc.lat > 24 && loc.lat < 28 && loc.lng > 122.5 && loc.lng < 131.5) { sh.getRange(i + 1, C.lat + 1, 1, 2).setValues([[loc.lat, loc.lng]]); done++; }
+      else fail.push(v[i][C.name]);
+    });
+    Utilities.sleep(700);
+  }
+  const left = todo.length - done - fail.length;
+  Logger.log('位置を入れた件数: ' + done + ' / 残り: ' + left + (left > 0 ? '（もう一度「位置をまとめて取得」を実行してください）' : '') + ' / 失敗: ' + fail.length + ' ' + fail.join('、'));
 }
 
 /** 【動作確認用】APIキーとトークンが入っているか確認 */

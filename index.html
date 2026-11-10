@@ -236,7 +236,7 @@ summary{font-size:14px;color:var(--ink2);padding:8px 4px}
    配達ルートアプリ
    データは端末（localStorage）に保存し、スプレッドシートとは Apps Script 経由で裏で同期する
    ========================================================= */
-const VERSION = 'v9';
+const VERSION = 'v10';
 const DWELL_DEFAULT = 6;            // 1件あたりの標準滞在（分）
 const AUTO_DONE_METERS = 250;       // アプリに戻った時、この距離以内なら自動で完了
 const MAX_WP = 25;                  // Routes API で1回に扱える経由地の上限
@@ -337,15 +337,15 @@ async function api(body){
 }
 async function loadMaster(silent){
   if (!S.cfg.url){ if (!silent) toast('先に接続設定が必要です（設定リンクを読み込んでね）'); return; }
-  if (!silent) busy('薬局リストを更新中…');
+  if (!silent) busy('配達先リストを更新中…');
   try{
     const res = await fetch(S.cfg.url + '?a=master&t=' + encodeURIComponent(S.cfg.t));
     const j = await res.json();
     if (!j.ok) throw new Error(j.error);
     S.master = j.master; saveMaster(); LS.set('masterAt', Date.now());
-    if (!silent){ busy(false); toast('薬局リストを更新しました（' + S.master.length + '件）'); }
+    if (!silent){ busy(false); toast('配達先リストを更新しました（' + S.master.length + '件）'); }
     if (!silent || (S.view === 'reg' && !S.q) || S.view === 'set') render();
-  }catch(e){ if (!silent){ busy(false); toast('薬局リストを取れませんでした'); } }
+  }catch(e){ if (!silent){ busy(false); toast('配達先リストを取れませんでした'); } }
 }
 /* 記録は裏で送る。送れなかった分は端末に貯めて、次の機会にまとめて送る */
 function enqueue(item){ S.queue.push(item); LS.set('queue', S.queue); flush(); }
@@ -832,7 +832,7 @@ function vReg(){
   $('#main').innerHTML = title('今日の配達', dateLabel(S.day.date)) + `
     <div class="label" style="margin-top:0"><span>どちらの便に入れますか</span></div>
     <div class="shift" id="shiftPick"></div>
-    <div class="search">${IC.search}<input id="q" placeholder="薬局名・住所・電話番号で探す" value="${esc(S.q)}" autocomplete="off" autocorrect="off" enterkeyhint="search"><button class="clear" data-a="clearQ" aria-label="消す" ${S.q ? '' : 'hidden'}>${IC.x}</button></div>
+    <div class="search">${IC.search}<input id="q" placeholder="名前・住所・電話番号で探す" value="${esc(S.q)}" autocomplete="off" autocorrect="off" enterkeyhint="search"><button class="clear" data-a="clearQ" aria-label="消す" ${S.q ? '' : 'hidden'}>${IC.x}</button></div>
     <div id="cands"></div>
     <div id="regList"></div>`;
   const q = $('#q');
@@ -855,8 +855,8 @@ function refreshReg(){
           del: done ? null : running ? { a:'delRegRun', label:'外す' } : { a:'delReg', label:'削除' }, drag: !running }); }).join('')}</div>
       ${running ? '<p class="hint">この便は配達中です。追加するとルートに入り、左にスワイプすると外せます。</p>'
                 : '<p class="hint">タップでメモや操作、左にスワイプで削除、長押しして動かすと並べ替え。</p>'}`
-    : `<div class="empty"><b>伝票の薬局を入れていこう</b>上の検索に名前を入れると候補が出ます。<br>マイクで「とまと薬局、大城薬局」と続けて言っても大丈夫。</div>`;
-  if (!S.master.length) $('#regList').innerHTML += `<div class="memo">薬局リストがまだありません。「設定」で設定リンクを読み込んでください。</div>`;
+    : `<div class="empty"><b>伝票の配達先を入れていこう</b>上の検索に名前を入れると候補が出ます。<br>マイクで「とまと薬局、大城薬局」と続けて言っても大丈夫。</div>`;
+  if (!S.master.length) $('#regList').innerHTML += `<div class="memo">配達先リストがまだありません。「設定」で設定リンクを読み込んでください。</div>`;
   const nx = running && byId(t.order[t.idx]);
   setBar(running ? `<button class="btn primary" data-a="tab" data-v="go">${IC.nav}<span class="bt"><b>配達に戻る</b><small>${nx ? '次は ' + esc(nx.name) : '営業所へ戻る'}</small></span></button><div class="more"><button class="btn danger" data-a="cancelTrip">この便をやめる</button></div>`
        : stops.length ? `<button class="btn primary" data-a="build">最短ルートを作る</button><div class="more"><button class="btn" data-a="buildFixed">この順で行く</button><button class="btn" data-a="move">${shiftName(S.shift==='am'?'pm':'am')}に移す</button><button class="btn danger" data-a="clearAll">すべて消す</button></div>` : '');
@@ -874,7 +874,7 @@ function candHtml(){
     ${groups.length > 1 ? `<div class="label"><span>「${esc(g.tok)}」</span></div>` : '<div style="height:8px"></div>'}
     <div class="card">${g.res.length ? g.res.map(p => `
       <div class="cand" data-a="add" data-id="${p.id}" data-tok="${esc(g.tok)}"><div class="grow"><div class="nm">${esc(p.name)} ${(p.visits || usage[p.id]) ? '<span class="chip">前に行った</span>' : ''}</div><div class="ad">${esc(shortAddr(p.addr))}</div></div><span class="plus">${IC.plus}</span></div>`).join('')
-      : `<div class="cand"><div class="grow"><div class="nm">見つかりません</div><div class="ad">リストにない薬局は、名前と住所で登録できます</div></div><button class="mini" data-a="sheet" data-s="new" data-tok="${esc(g.tok)}">登録する</button></div>`}</div>`).join('');
+      : `<div class="cand"><div class="grow"><div class="nm">見つかりません</div><div class="ad">リストにない所は、名前と住所で登録できます</div></div><button class="mini" data-a="sheet" data-s="new" data-tok="${esc(g.tok)}">登録する</button></div>`}</div>`).join('');
 }
 
 /* ---------- 配達 ---------- */
@@ -909,7 +909,7 @@ function vGo(){
         ${depRow('着', hm(e.end), 'last')}
       </div>
       <p class="hint">タップでメモ、長押しして動かすと入れ替え、左にスワイプで外せます。高速・有料道路は使いません。</p>`}`;
-    setBar(`<button class="btn primary" data-a="start">${IC.nav}<span class="bt"><b>出発する</b><small>1件目 ${esc((byId(t.order[0]) || {}).name || '')}</small></span></button><div class="more"><button class="btn" data-a="sheet" data-s="add">薬局を追加</button>${t.manual ? `<button class="btn" data-a="rebuild">最短に並べ直す</button>` : `<button class="btn" data-a="edit">登録に戻る</button>`}</div>`);
+    setBar(`<button class="btn primary" data-a="start">${IC.nav}<span class="bt"><b>出発する</b><small>1件目 ${esc((byId(t.order[0]) || {}).name || '')}</small></span></button><div class="more"><button class="btn" data-a="sheet" data-s="add">配達先を追加</button>${t.manual ? `<button class="btn" data-a="rebuild">最短に並べ直す</button>` : `<button class="btn" data-a="edit">登録に戻る</button>`}</div>`);
     return;
   }
 
@@ -934,7 +934,7 @@ function vGo(){
     $('#main').innerHTML = head + `
       <div class="sign"><div class="eyebrow"><span>全部まわりました</span></div><div class="name">営業所へ戻る</div>
         <div class="figs"><div class="fig"><small>ここから</small><b>${mins(e.backSec)}<span>分</span></b></div><div class="fig"><small>着く予定</small><b>${hm(e.end)}</b></div></div></div>`;
-    setBar(`<button class="btn primary" data-a="navDepot">${IC.nav}<span class="bt"><b>ナビ開始</b><small>営業所へ・約${mins(e.backSec)}分</small></span></button><div class="more"><button class="btn" data-a="finish">便を終える</button><button class="btn" data-a="sheet" data-s="add">薬局を追加</button></div>`);
+    setBar(`<button class="btn primary" data-a="navDepot">${IC.nav}<span class="bt"><b>ナビ開始</b><small>営業所へ・約${mins(e.backSec)}分</small></span></button><div class="more"><button class="btn" data-a="finish">便を終える</button><button class="btn" data-a="sheet" data-s="add">配達先を追加</button></div>`);
     return;
   }
   const p = byId(id) || { name:id, addr:'' }, leg = curLeg(t, t.idx), going = !!t.navAt;
@@ -972,7 +972,7 @@ function vRev(){
     ${trips.map(t => `<div class="label"><span>${shiftName(t.shift)}の便　${hm(t.startAt)} 出発</span><span>${t.stops.filter(s => s.state === 'done').length}件 完了</span></div>
       <div class="card"><div class="sum"><div><small>出発時の予測</small><b>${hm(t.predEnd)}</b></div><div><small>実際</small><b>${t.endAt ? hm(t.endAt) : '<span>配達中</span>'}</b></div><div><small>ルート変更</small><b>${t.changes}<span>回</span></b></div></div>
       ${hist.includes(t) ? `<button class="as-btn danger" style="font-size:15px;padding:12px;border-top:.5px solid var(--rule)" data-a="delTrip" data-id="${esc(t.id)}">この便の記録を消す</button>` : ''}</div>`).join('')}
-    ${all.length ? `<div class="label"><span>回った薬局のメモ</span><span>タップで書く</span></div>
+    ${all.length ? `<div class="label"><span>回った所のメモ</span><span>タップで書く</span></div>
       <div class="card">${all.map(({ s, t }) => { const p = byId(s.id) || { name:s.id }; const tg = tagsOf(p), key = t.id + '|' + s.id, open = S.revOpen === key; return `
       <div class="rv ${open ? 'open' : ''}">
         <div class="rv-h" data-a="revOpen" data-id="${esc(key)}"><div class="grow"><div class="nm">${esc(p.name)}</div>${tg.length || p.note ? `<div>${tg.map(x => `<span class="chip amber" style="margin-right:4px">${esc(x)}</span>`).join('')}${p.note ? '<span class="chip">備考あり</span>' : ''}</div>` : ''}</div>
@@ -985,7 +985,7 @@ function vRev(){
       </div>`; }).join('')}</div>
       <p class="hint">メモは、次にその薬局へ行く時に配達の画面に出ます。記録を消しても、メモは残ります。</p>
       ${hist.length ? `<button class="btn quiet danger" data-a="delDay" style="margin-top:8px">この日の記録をすべて消す</button>` : ''}`
-    : `<div class="empty"><b>まだ回った薬局がありません</b>配達が終わると、ここで薬局ごとのメモを書けます。</div>`}`;
+    : `<div class="empty"><b>まだ回った所がありません</b>配達が終わると、ここで薬局ごとのメモを書けます。</div>`}`;
   setBar('');
 }
 /* 記録を消す（テスト用）。スプレッドシート側も消して、訪問回数と平均滞在を計算し直す */
@@ -1012,7 +1012,7 @@ function vSet(){
     ${S.cfg.url ? '' : `<div class="memo" style="margin-bottom:12px">まだ使えません。設定リンク（QRコードのリンク）をコピーして、下の「設定リンクを貼り付け」に入れてください。</div>`}
     <div class="card">
       <div class="set"><div class="grow"><div class="k">営業所の場所</div><div class="v">${d ? '登録済み。出発と戻りの場所になります' : '未登録。営業所にいる時に押してください'}</div></div><button class="mini" data-a="setDepot">${d ? '今の場所に直す' : '今の場所を登録'}</button></div>
-      <div class="set"><div class="grow"><div class="k">薬局リスト <span class="n">${S.master.length}</span>件</div><div class="v">${at ? new Date(at).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',month:'numeric',day:'numeric',hour:'numeric',minute:'2-digit'}) + ' に更新' : 'まだ読み込んでいません'}</div></div><button class="mini" data-a="reload">更新</button></div>
+      <div class="set"><div class="grow"><div class="k">配達先リスト <span class="n">${S.master.length}</span>件</div><div class="v">${at ? new Date(at).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',month:'numeric',day:'numeric',hour:'numeric',minute:'2-digit'}) + ' に更新' : 'まだ読み込んでいません'}</div></div><button class="mini" data-a="reload">更新</button></div>
       <div class="set"><div class="grow"><div class="k">記録の送信</div><div class="v">${S.queue.length ? '未送信が' + S.queue.length + '件あります' : 'すべて保存済み'}</div></div>${S.queue.length ? `<button class="mini" data-a="flushNow">今すぐ送る</button>` : ''}</div>
     </div>
     <div class="label"><span>画面の色</span></div>
@@ -1066,15 +1066,15 @@ function renderSheet(){
         ${acts}
       </div><div style="height:8px"></div>`);
   } else if (S.sheet === 'new'){
-    o.innerHTML = wrap(`<h2>新しい薬局を登録</h2><div class="sub">伝票の名前と住所をそのまま入れてください</div>
-      <div class="card pad"><input class="field" id="nName" placeholder="薬局名" value="${esc(S.newName || '')}" autocomplete="off"><div style="height:8px"></div><input class="field" id="nAddr" placeholder="住所（例：沖縄県浦添市城間1-2-3）" value="沖縄県" autocomplete="off"></div>
+    o.innerHTML = wrap(`<h2>新しい配達先を登録</h2><div class="sub">伝票の名前と住所をそのまま入れてください</div>
+      <div class="card pad"><input class="field" id="nName" placeholder="名前（薬局・病院・クリニックなど）" value="${esc(S.newName || '')}" autocomplete="off"><div style="height:8px"></div><input class="field" id="nAddr" placeholder="住所（例：沖縄県浦添市城間1-2-3）" value="沖縄県" autocomplete="off"></div>
       <div style="height:10px"></div><button class="btn primary" data-a="newSave" style="min-height:54px;font-size:18px">登録して追加</button><div style="height:8px"></div>`);
   } else if (S.sheet === 'change'){
     const cur = byId(t.order[t.idx]);
     o.innerHTML = wrap(`<h2>その他</h2><div class="card">
       <button class="opt" data-a="rr">${IC.here}<div><b>今いる場所から最短に組み直す</b><span>渋滞や寄り道のあとに</span></div></button>
-      <button class="opt" data-a="sheet" data-s="first">${IC.up}<div><b>先に行く薬局を選ぶ</b><span>選んだ薬局を次にします</span></div></button>
-      <button class="opt" data-a="sheet" data-s="add">${IC.plus}<div><b>薬局を追加</b><span>名前で探して、ルートに入れます</span></div></button>
+      <button class="opt" data-a="sheet" data-s="first">${IC.up}<div><b>先に行く配達先を選ぶ</b><span>選んだ所を次にします</span></div></button>
+      <button class="opt" data-a="sheet" data-s="add">${IC.plus}<div><b>配達先を追加</b><span>名前で探して、ルートに入れます</span></div></button>
       ${cur ? `<button class="opt" data-a="stop" data-id="${cur.id}" data-ctx="cur">${IC.note}<div><b>${esc(cur.name)} のメモを書く</b><span>裏口・駐車場など</span></div></button>
       <button class="opt" data-a="done">${IC.check}<div><b>${esc(cur.name)} を完了にする</b><span>ナビを使わずに配達した時</span></div></button>
       <button class="opt" data-a="drop" data-id="${cur.id}">${IC.ban}<div><b>${esc(cur.name)} は今日行かない</b><span>リストから外します</span></div></button>` : ''}
@@ -1087,9 +1087,9 @@ function renderSheet(){
       <p class="hint">時間は走っている時間だけの合計です（薬局での時間は別）。高速・有料道路は使わない条件です。道路の状況は変わるので、途中で遅れたら「その他」→「今いる場所から最短に組み直す」で計算し直せます。</p>
       <p class="hint">自分の順番で行きたい時は、一覧を長押しで入れ替えると、その順番の時間が出ます。</p><div style="height:8px"></div>`);
   } else if (S.sheet === 'first'){
-    o.innerHTML = wrap(`<h2>先に行く薬局を選ぶ</h2><div class="card noline">${t.order.slice(t.idx).map((id, i) => `<div data-a="first" data-id="${id}">${stopRow({ num: t.idx + i + 1, name: byId(id)?.name || id })}</div>`).join('')}</div><div style="height:8px"></div>`);
+    o.innerHTML = wrap(`<h2>先に行く配達先を選ぶ</h2><div class="card noline">${t.order.slice(t.idx).map((id, i) => `<div data-a="first" data-id="${id}">${stopRow({ num: t.idx + i + 1, name: byId(id)?.name || id })}</div>`).join('')}</div><div style="height:8px"></div>`);
   } else if (S.sheet === 'add'){
-    o.innerHTML = wrap(`<h2>薬局を追加</h2><div class="search">${IC.search}<input id="aq" placeholder="薬局名・住所・電話番号で探す" autocomplete="off" autocorrect="off"></div><div id="acands" style="min-height:160px"></div>`);
+    o.innerHTML = wrap(`<h2>配達先を追加</h2><div class="search">${IC.search}<input id="aq" placeholder="名前・住所・電話番号で探す" autocomplete="off" autocorrect="off"></div><div id="acands" style="min-height:160px"></div>`);
     const aq = $('#aq'); aq.focus({ preventScroll:true });
     aq.oninput = () => { const r = searchOne(aq.value); $('#acands').innerHTML = aq.value.trim() ? `<div style="height:8px"></div><div class="card">${r.map(p => `<div class="cand" data-a="addrun" data-id="${p.id}"><div class="grow"><div class="nm">${esc(p.name)}</div><div class="ad">${esc(shortAddr(p.addr))}</div></div><span class="plus">${IC.plus}</span></div>`).join('') || '<div class="cand"><div class="grow"><div class="nm">見つかりません</div></div></div>'}</div>` : ''; };
   }
@@ -1097,7 +1097,7 @@ function renderSheet(){
 
 /* 新しい薬局をリストに登録 */
 async function newPharmacy(nm, addr){
-  if (!nm || !addr || addr === '沖縄県'){ toast('薬局名と住所を入れてください'); return; }
+  if (!nm || !addr || addr === '沖縄県'){ toast('名前と住所を入れてください'); return; }
   S.sheet = null; busy('登録中…');
   try{
     const j = await api({ a:'add', name:nm, addr });

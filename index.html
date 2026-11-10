@@ -240,7 +240,7 @@ summary{font-size:14px;color:var(--ink2);padding:8px 4px}
    配達ルートアプリ
    データは端末（localStorage）に保存し、スプレッドシートとは Apps Script 経由で裏で同期する
    ========================================================= */
-const VERSION = 'v14';
+const VERSION = 'v15';
 const AUTO_DONE_METERS = 250;       // アプリに戻った時、この距離以内なら自動で完了
 const MAX_WP = 25;                  // Routes API で1回に扱える経由地の上限
 const TAG_LIST = ['裏口','右側','左側','駐車しにくい','駐車場あり','昼休みあり','受付に時間がかかる'];
@@ -689,20 +689,34 @@ function settle(t, departAt){
   enqueue({ a:'visit', id: st.id, dwell: st.dwell, date: S.day.date });
   save();
 }
-function skipLater(){
-  const t = curTrip();
-  if (t.order.length - t.idx < 2){ toast('これが最後の1件です'); return; }
-  reroute('後回し', { lastId: t.order[t.idx], fixed: t.manual });
+/* 今の配達先を後ろへ動かす。ふつうは「1つ後」（次の所を先に済ませて、すぐ戻ってくる）。toLast なら一番最後へ */
+async function moveCurrent(kind, toLast){
+  const t = curTrip(), ids = t.order.slice(t.idx), id = ids[0], p = byId(id);
+  S.sheet = null;
+  if (ids.length < 2){ toast('これが最後の1件です'); renderSheet(); return false; }
+  if (toLast || ids.length === 2) await reroute(kind, { ids: [...ids.slice(1), id], fixed:true, target:id });
+  else await reroute(kind, { ids: [ids[1], id, ...ids.slice(2)], fixed:true, target:id });
+  const nm = p ? p.name : '';
+  if (toLast || ids.length === 2) toast(nm + ' を最後に回しました');
+  else toast(nm + ' を1つ後に回しました', { label:'最後に回す', fn: () => {
+    const rest = t.order.slice(t.idx); if (!rest.includes(id) || rest[0] === id) return;
+    reroute('最後に回す', { ids: [...rest.filter(x => x !== id), id], fixed:true, target:id }).then(() => toast(nm + ' を最後に回しました'));
+  } });
+  return true;
 }
-/* 行ったら閉まっていた：時刻を記録して最後に回し、次の配達先へ進む。午後なら、その曜日を午後休診として覚えるか聞く */
+/* 行ったら閉まっていた：時刻を記録して1つ後に回し、次の配達先へ進む */
 function closedNow(){
-  const t = curTrip(), id = t.order[t.idx], p = byId(id), st = t.stops.find(x => x.id === id); if (!id || !st) return;
-  const now = Date.now(), d = new Date(new Date().toLocaleString('en-US', { timeZone:'Asia/Tokyo' })), wd = '日月火水木金土'[d.getDay()];
-  st.closedAt = now; st.closedCount = (st.closedCount || 0) + 1; S.sheet = null;
-  const offer = p && d.getHours() >= 12 && wd !== '日' && !closedDays(p).includes(wd);
-  const after = () => toast((p ? p.name : '') + ' を後に回しました', offer ? { label: wd + '曜の午後休診として覚える', fn: () => { setTags(p, tagsOf(p).concat('午後休:' + wd)); toast('覚えました'); if (S.view === 'go') render(); } } : null);
-  if (t.order.length - t.idx < 2){ t.navAt = null; logChange('閉まっていた', id, null); save(); render(); after(); return; }
-  reroute('閉まっていた', { lastId: id, fixed: t.manual, target: id }).then(after);
+  const t = curTrip(), id = t.order[t.idx], st = t.stops.find(x => x.id === id); if (!id || !st) return;
+  st.closedAt = Date.now(); st.closedCount = (st.closedCount || 0) + 1;
+  if (t.order.length - t.idx < 2){ S.sheet = null; t.navAt = null; logChange('閉まっていた', id, null); save(); render(); toast('記録しました。これが最後の1件です'); return; }
+  moveCurrent('閉まっていた', false);
+}
+/* 閉まっていた時刻が午後で、その曜日をまだ覚えていなければ、覚えるかを聞くボタンを出す */
+function closedOffer(p, st){
+  if (!st || !st.closedAt) return '';
+  const d = new Date(new Date(st.closedAt).toLocaleString('en-US', { timeZone:'Asia/Tokyo' })), wd = '日月火水木金土'[d.getDay()];
+  const ask = d.getHours() >= 12 && wd !== '日' && !closedDays(p).includes(wd);
+  return `<div class="memo closed" style="display:flex;align-items:center;gap:10px"><span class="grow">さっき ${hm(st.closedAt)} に行った時は閉まっていました</span>${ask ? `<button class="mini" style="background:#fff;color:var(--red)" data-a="rememberClosed" data-id="${p.id}" data-wd="${wd}">${wd}曜午後は休診</button>` : ''}</div>`;
 }
 function dropStop(id){
   const t = curTrip();
@@ -981,7 +995,7 @@ function vGo(){
         <button class="sign-btn" data-a="done">${IC.check}完了にする</button></div>
     </div>
     ${t.breakAt ? `<div class="memo" style="display:flex;align-items:center;gap:10px"><span class="grow">休憩中（${hm(t.breakAt)}から）</span><button class="mini" data-a="breakEnd">休憩を終える</button></div>` : ''}
-    ${(t.stops.find(x => x.id === id) || {}).closedAt ? `<div class="memo closed">さっき ${hm(t.stops.find(x => x.id === id).closedAt)} に行った時は閉まっていました</div>` : ''}
+    ${closedOffer(p, t.stops.find(x => x.id === id))}
     ${memoHtml(p, t.shift)}
     <div style="height:14px"></div>
     ${pick(rest ? `このあと ${rest}件` : 'このあと', '地図')}
@@ -991,7 +1005,7 @@ function vGo(){
       ${rest > 4 ? `<button class="btn quiet" data-a="toggleAll">${S.showAll ? '少なく表示' : 'あと' + (rest - 4) + '件も見る'}</button>` : ''}` : '<p class="hint" style="text-align:center;margin-top:16px">これが最後の1件です</p>'}`;
   setBar(going
     ? `<button class="btn go" data-a="done">${IC.check}<span class="bt"><b>配達完了・次へ</b><small>${esc(p.name)}</small></span></button><div class="more"><button class="btn danger" data-a="closedNow">閉まっていた</button><button class="btn" data-a="nav">ナビに戻る</button><button class="btn" data-a="sheet" data-s="change">その他</button></div>`
-    : `<button class="btn primary" data-a="nav">${IC.nav}<span class="bt"><b>ナビ開始</b><small>${esc(p.name)}へ${leg ? '・約' + mins(leg.sec) + '分' : ''}</small></span></button><div class="more"><button class="btn" data-a="later">後回し</button><button class="btn" data-a="sheet" data-s="change">その他</button></div>`);
+    : `<button class="btn primary" data-a="nav">${IC.nav}<span class="bt"><b>ナビ開始</b><small>${esc(p.name)}へ${leg ? '・約' + mins(leg.sec) + '分' : ''}</small></span></button><div class="more"><button class="btn" data-a="later">1つ後に回す</button><button class="btn" data-a="sheet" data-s="change">その他</button></div>`);
 }
 
 /* ---------- 振り返り ---------- */
@@ -1117,8 +1131,9 @@ function renderSheet(){
       <button class="opt" data-a="sheet" data-s="first">${IC.up}<div><b>先に行く配達先を選ぶ</b><span>選んだ所を次にします</span></div></button>
       <button class="opt" data-a="sheet" data-s="add">${IC.plus}<div><b>配達先を追加</b><span>名前で探して、ルートに入れます</span></div></button>
       <button class="opt" data-a="${t.breakAt ? 'breakEnd' : 'breakStart'}">${IC.note}<div><b>${t.breakAt ? '休憩を終える' : '休憩する'}</b><span>休憩の時間は、納品の時間とは分けて記録します</span></div></button>
-      ${cur ? `<button class="opt" data-a="closedNow">${IC.ban}<div><b>${esc(cur.name)} は閉まっていた</b><span>記録して後に回し、次へ進みます</span></div></button>
-      <button class="opt" data-a="later">${IC.up.replace('M12 19V5M6 11l6-6 6 6','M12 5v14M6 13l6 6 6-6')}<div><b>${esc(cur.name)} を後回しにする</b><span>最後に回します</span></div></button>
+      ${cur ? `<button class="opt" data-a="closedNow">${IC.ban}<div><b>${esc(cur.name)} は閉まっていた</b><span>記録して1つ後に回し、次へ進みます</span></div></button>
+      <button class="opt" data-a="later">${IC.up.replace('M12 19V5M6 11l6-6 6 6','M12 5v14M6 13l6 6 6-6')}<div><b>${esc(cur.name)} を1つ後に回す</b><span>次の所を先に行きます</span></div></button>
+      <button class="opt" data-a="laterLast">${IC.up.replace('M12 19V5M6 11l6-6 6 6','M12 5v14M6 13l6 6 6-6')}<div><b>${esc(cur.name)} を最後に回す</b></div></button>
       <button class="opt" data-a="stop" data-id="${cur.id}" data-ctx="cur">${IC.note}<div><b>${esc(cur.name)} のメモを書く</b><span>裏口・駐車場など</span></div></button>
       <button class="opt" data-a="done">${IC.check}<div><b>${esc(cur.name)} を完了にする</b><span>ナビを使わずに配達した時</span></div></button>
       <button class="opt" data-a="drop" data-id="${cur.id}">${IC.ban}<div><b>${esc(cur.name)} は今日行かない</b><span>リストから外します</span></div></button>` : ''}
@@ -1301,7 +1316,9 @@ const ACT = {
   nav: () => { const t = curTrip(), p = byId(t.order[t.idx]); if (p) navTo(destText(p)); },
   navDepot: () => navTo(S.cfg.depot.lat + ',' + S.cfg.depot.lng),
   finish: () => finishTrip(),
-  later: () => { S.sheet = null; skipLater(); },
+  later: () => moveCurrent('後回し', false),
+  laterLast: () => moveCurrent('最後に回す', true),
+  rememberClosed: d => { const p = byId(d.id); if (p && !closedDays(p).includes(d.wd)) setTags(p, tagsOf(p).concat('午後休:' + d.wd)); toast(d.wd + '曜の午後休診として覚えました'); render(); },
   closedNow: () => closedNow(),
   done: () => complete(false),
   undoDone: () => undoDone(),

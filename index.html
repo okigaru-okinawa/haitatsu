@@ -277,7 +277,7 @@ summary{font-size:14px;color:var(--ink2);padding:8px 4px}
    配達ルートアプリ
    データは端末（localStorage）に保存し、スプレッドシートとは Apps Script 経由で裏で同期する
    ========================================================= */
-const VERSION = 'v21';
+const VERSION = 'v22';
 const AUTO_DONE_METERS = 250;       // アプリに戻った時、この距離以内なら自動で完了
 const MAX_WP = 25;                  // Routes API で1回に扱える経由地の上限
 const TAG_LIST = ['裏口','右側','左側','駐車しにくい','駐車場あり','昼休みあり','受付に時間がかかる'];
@@ -975,7 +975,7 @@ function vGo(){
   const rowOf = (i, o) => { const id = t.order[i], p = byId(id) || { name:id, addr:'' };
     return stopRow(Object.assign({ id, num: i + 1, name: p.name, addr: shortAddr(p.addr), side: hm(e.list[i]),
       extra: ((t.stops.find(x => x.id === id) || {}).closedAt ? ` <span class="chip red">${hm(t.stops.find(x => x.id === id).closedAt)} 閉まっていた</span>` : closedToday(p, t.shift) ? ' <span class="chip red">午後休診</span>' : '') + (tagsOf(p).length || p.note ? ' <span class="chip amber">メモ</span>' : '') }, o)); };
-  const depRow = (label, time, cls) => stopRow({ num: label, cls: 'term ' + cls, name: '営業所', side: time });
+  const depRow = (label, time, cls) => stopRow({ num: label, cls: 'term ' + cls, name: (S.cfg.depot && S.cfg.depot.name) || '営業所', side: time });
   const pick = (a, b) => `<div class="seg"><button data-a="goTab" data-t="list" class="${tab==='list'?'on':''}">${a}</button><button data-a="goTab" data-t="map" class="${tab==='map'?'on':''}">${b}</button></div>`;
 
   if (t.status === 'ready'){
@@ -1100,7 +1100,12 @@ function vSet(){
   $('#main').innerHTML = title('設定') + `
     ${S.cfg.url ? '' : `<div class="memo" style="margin-bottom:12px">まだ使えません。設定リンク（QRコードのリンク）をコピーして、下の「設定リンクを貼り付け」に入れてください。</div>`}
     <div class="card">
-      <div class="set"><div class="grow"><div class="k">営業所の場所</div><div class="v">${d ? '登録済み。出発と戻りの場所になります' : '未登録。営業所にいる時に押してください'}</div></div><button class="mini" data-a="setDepot">${d ? '今の場所に直す' : '今の場所を登録'}</button></div>
+      <div class="set"><div class="grow"><div class="k">営業所（出発して、戻る場所）</div><div class="v">${d ? (d.name ? esc(d.name) + '　' + esc(shortAddr(d.addr || '')) : '登録済み（今いた場所で登録）') : 'まだ登録されていません'}</div></div></div>
+      <div class="set" style="display:block">
+        <div class="search" style="background:var(--paper);height:46px"><input id="dq" value="${esc(S.dq ?? '沖縄東邦')}" placeholder="会社の名前で探す" autocomplete="off"><button class="mini" data-a="depotSearch" style="margin-right:2px">探す</button></div>
+        ${S.dres ? (S.dres.length ? S.dres.map((x, i) => `<div class="cand" style="padding-left:2px" data-a="depotPick" data-i="${i}"><div class="grow"><div class="nm">${esc(x.name)}</div><div class="ad">${esc(shortAddr(x.addr))}</div></div><span class="chip">ここにする</span></div>`).join('') : '<div class="v" style="padding:10px 2px 0">見つかりませんでした。名前を変えるか、営業所で「今いる場所を営業所にする」を押してください</div>') : ''}
+        <button class="newlink" data-a="setDepot">${IC.here}今いる場所を営業所にする</button>
+      </div>
       <div class="set"><div class="grow"><div class="k">配達先リスト <span class="n">${S.master.length}</span>件</div><div class="v">${at ? new Date(at).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',month:'numeric',day:'numeric',hour:'numeric',minute:'2-digit'}) + ' に更新' : 'まだ読み込んでいません'}</div></div><button class="mini" data-a="reload">更新</button></div>
       <div class="set"><div class="grow"><div class="k">記録の送信</div><div class="v">${S.queue.length ? '未送信が' + S.queue.length + '件あります' : 'すべて保存済み'}</div></div>${S.queue.length ? `<button class="mini" data-a="flushNow">今すぐ送る</button>` : ''}</div>
     </div>
@@ -1432,6 +1437,19 @@ const ACT = {
   park: async d => {
     try{ const pos = await here(); const p = byId(d.id); p.plat = pos.lat; p.plng = pos.lng; saveMaster(); enqueue({ a:'note', id:p.id, plat:pos.lat, plng:pos.lng }); toast('駐車位置を保存しました'); render(); }
     catch(e){ toast(e.message); }
+  },
+  depotSearch: async () => {
+    S.dq = $('#dq').value.trim(); if (!S.dq) return;
+    busy('Googleマップで探しています…');
+    try{ const j = await api({ a:'places', q: S.dq + ' 沖縄' }); S.dres = j.places || []; }
+    catch(e){ toast(e.server ? '検索の設定がまだです' : '通信できませんでした'); }
+    busy(false); render();
+  },
+  depotPick: d => {
+    const x = S.dres && S.dres[Number(d.i)]; if (!x) return;
+    S.cfg.depot = { lat: x.lat, lng: x.lng, name: x.name, addr: x.addr }; S.dres = null; save(); keepSetupInUrl();
+    ['am','pm'].forEach(k => { const t = S.day.trips[k]; if (t.status === 'ready'){ t.order = null; t.status = 'plan'; } });
+    save(); render(); toast('営業所を ' + x.name + ' にしました');
   },
   setDepot: async () => { busy('現在地を取得中…'); try{ S.cfg.depot = await here(); save(); keepSetupInUrl(); toast('営業所を登録しました'); }catch(e){ toast(e.message); } busy(false); render(); },
   theme: d => { S.cfg.theme = d.th; save(); applyTheme(); render(); },

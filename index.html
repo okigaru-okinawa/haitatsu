@@ -101,6 +101,8 @@ main{padding:10px 16px 0;max-width:560px;margin:0 auto}
 /* 配達先の行（路線図ふう）。左スワイプで削除、長押しで並べ替え */
 .srow{position:relative;background:var(--red);-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .srow .row-del{position:absolute;right:0;top:0;bottom:0;width:88px;border:0;background:var(--red);color:#fff;font-size:15px;font-weight:700}
+.srow.two{background:var(--green)}
+.srow .row-went{position:absolute;right:88px;top:0;bottom:0;width:88px;border:0;background:var(--green);color:#fff;font-size:15px;font-weight:700}
 .row-body:active{background:var(--rule)}
 .row-body{position:relative;display:flex;align-items:center;gap:12px;background:var(--card);padding:0 12px 0 0;min-height:62px;touch-action:pan-y;transition:transform .18s ease}
 .rail{position:relative;align-self:stretch;width:56px;flex:none;display:flex;align-items:center;justify-content:center}
@@ -401,7 +403,7 @@ summary{font-size:14px;color:var(--ink2);padding:8px 4px}
    配達ルートアプリ
    データは端末（localStorage）に保存し、スプレッドシートとは Apps Script 経由で裏で同期する
    ========================================================= */
-const VERSION = 'v27';
+const VERSION = 'v28';
 const AUTO_DONE_METERS = 250;       // アプリに戻った時、この距離以内なら自動で完了
 const MAX_WP = 25;                  // Routes API で1回に扱える経由地の上限
 const TAG_LIST = ['裏口','右側','左側','駐車しにくい','駐車場あり','昼休みあり','受付に時間がかかる'];
@@ -762,6 +764,7 @@ async function reroute(kind, opt){
   let fallback = ids.slice();
   if (opt.firstId) fallback = [opt.firstId, ...fallback.filter(x => x !== opt.firstId)];
   if (lastId) fallback = [...fallback.filter(x => x !== lastId), lastId];
+  reSeq++; clearTimeout(reTimer);   // 裏で予定していた組み直しは、こちらに任せる
   busy('組み直し中…');
   let pos = null;
   try{
@@ -816,7 +819,7 @@ const mapsUrl = dest => 'https://www.google.com/maps/dir/?api=1&travelmode=drivi
 function navTo(dest){
   const t = curTrip();
   if (t.breakAt){ const m = Math.max(1, Math.round((Date.now() - t.breakAt) / 60000)); t.breakMin = (t.breakMin || 0) + m; t.breakAt = null; logChange('休憩 ' + m + '分', '', null); }
-  settle(t, Date.now());
+  settle(t, Date.now()); commitWent(t);
   if (!t.navAt) t.navAt = Date.now();
   save(); render();
   location.href = mapsUrl(dest);   // dest は destText(p) か「緯度,経度」
@@ -888,11 +891,79 @@ function dropStop(id){
   st.state = 'drop';
   const p = byId(id);
   enqueue({ a:'log', sheet:'配達記録', row:[t.id, S.day.date, id, p ? p.name : '', st.plan || '', '', st.eta0 ? hm(st.eta0) : '', '', '', '今日は行かない', ''] });
-  reroute('今日は行かない', { ids: t.order.slice(t.idx).filter(x => x !== id), fixed:true, target:id });
+  const j = t.order.indexOf(id, t.idx);
+  if (j >= 0){ cutLeg(t, j); t.order.splice(j, 1); if (j === t.idx) t.navAt = null; }
+  save(); render();
+  toast((p ? p.name : '') + ' を外しました');
+  rerouteSoon('今日は行かない', id);
+}
+/* ---------- ナビを使わずに寄った所を「行った」にする ---------- */
+const cutLeg = (t, j) => { const k = j - (t.legBase || 0); if (t.legs && k >= 0 && k < t.legs.length) t.legs.splice(k, 1); };
+/* 「行った」の記録は、取り消せるように少しだけ待ってから送る */
+function commitWent(t){
+  if (!t || !t.wentPend) return;
+  const st = t.stops.find(s => s.id === t.wentPend); t.wentPend = null;
+  if (!st || st.state !== 'done') return;
+  const p = byId(st.id);
+  enqueue({ a:'log', sheet:'配達記録', row:[t.id, S.day.date, st.id, p ? p.name : '', st.plan || '', st.seq, st.eta0 ? hm(st.eta0) : '', hm(st.doneAt), '', '完了(ついでに)' + (st.added ? '・追加' : ''), st.pin ? '優先' : ''] });
+  enqueue({ a:'visit', id: st.id, dwell: null, date: S.day.date });
+  save();
+}
+function wentStop(id){
+  const t = curTrip(), j = t.order.indexOf(id, t.idx), st = t.stops.find(s => s.id === id);
+  if (j < 0 || !st) return;
+  if (j === t.idx){ complete(false); return; }
+  commitWent(t);
+  const now = Date.now(), keep = t.pending && t.idx > 0 && t.order[t.idx - 1] === t.pending;   // 「まだだった」で戻せる所は、そのまま残す
+  Object.assign(st, { state:'done', doneAt: now, arrAt: now, seq: t.idx + 1, auto: false, went: true, dwell: null });
+  cutLeg(t, j);
+  t.order.splice(j, 1); t.order.splice(keep ? t.idx - 1 : t.idx, 0, id);
+  t.idx++; t.legBase = (t.legBase || 0) + 1; t.wentPend = id;
+  const p = byId(id);
+  if (p){ p.visits = (p.visits||0) + 1; p.last = S.day.date; saveMaster(); }
+  save(); render();
+  toast((p ? p.name : '') + ' を配達済みにしました', { label:'取り消す', fn: () => undoWent(id) });
+  rerouteSoon('ついでに配達', id);
+}
+function undoWent(id){
+  const t = curTrip(), st = t.stops.find(s => s.id === id), at = t.order.indexOf(id);
+  if (t.wentPend !== id || !st || at < 0 || at >= t.idx) return;
+  t.wentPend = null;
+  Object.assign(st, { state:'todo', doneAt: null, arrAt: null, seq: null, went: false });
+  const p = byId(id); if (p && p.visits){ p.visits--; saveMaster(); }
+  t.order.splice(at, 1); t.idx--; t.legBase = Math.max(0, (t.legBase || 0) - 1);
+  const to = Math.min(t.order.length, t.idx + 1);
+  t.order.splice(to, 0, id);
+  const k = to - (t.legBase || 0); if (t.legs && k >= 0 && k <= t.legs.length) t.legs.splice(k, 0, { sec: 300, m: 1000 });
+  save(); render();
+  rerouteSoon('取り消し', id);
+}
+/* 残りの順番を、今いる場所から裏で組み直す。画面は止めない。続けて押した時は、最後の1回だけ動く */
+let reTimer = null, reSeq = 0;
+function rerouteSoon(kind, target){ clearTimeout(reTimer); const seq = ++reSeq; reTimer = setTimeout(() => bgReroute(kind, target, seq), 1500); }
+async function bgReroute(kind, target, seq){
+  const t = curTrip(); if (!t || t.status !== 'run') return;
+  const ids = t.order.slice(t.idx), idx0 = t.idx, key = ids.slice().sort().join();
+  const same = () => curTrip() === t && t.status === 'run' && t.idx === idx0 && t.order.slice(t.idx).sort().join() === key;
+  try{
+    const pos = await here().catch(() => null);
+    const origin = pos || (t.idx ? pt(byId(t.order[t.idx-1])) : S.cfg.depot);
+    const head = t.navAt ? ids[0] : null;   // もうナビで向かっている所は、行き先を変えない
+    const r = await planRoute(origin, ids.map(id => ({ id, pin: id === head })), S.cfg.depot, !!t.manual);
+    if (seq !== reSeq) return;
+    if (!same()){ rerouteSoon(kind, target); return; }
+    const order = r.order.slice(); ids.forEach(id => { if (!order.includes(id)) order.push(id); });
+    const moved = order.join() !== ids.join();
+    t.order = t.order.slice(0, t.idx).concat(order); t.legs = r.legs; t.legBase = t.idx; t.changes++;
+    if (t.navAt) t.navAt = Date.now();
+    logChange(kind, target || '', pos); save();
+    if (!sorting && !(sw && sw.on) && !document.querySelector('.srow.open')) render();
+    if (moved) toast('残りの順番を組み直しました');
+  }catch(e){ /* 通信できない時は、今の順番のまま進める */ }
 }
 /* 便を終える：記録を送り、履歴に移して、同じ枠で次の便を登録できるようにする */
 function closeTrip(t, stale){
-  settle(t, stale ? null : Date.now());
+  settle(t, stale ? null : Date.now()); commitWent(t);
   const lastDone = Math.max(0, ...t.stops.map(s => s.doneAt || 0));
   t.status = 'done'; t.endAt = stale ? (lastDone || t.startAt) : Date.now(); t.navAt = null;
   enqueue({ a:'log', sheet:'便の記録', row:[t.id, S.day.date, shiftName(t.shift), hm(t.startAt), stale ? '(終了を押し忘れ)' : hm(t.endAt), t.stops.filter(s => s.state === 'done').length, hm(t.predEnd), hm(t.endAt), t.km || '', t.changes] });
@@ -1179,7 +1250,8 @@ function memoHtml(p, shift){
 }
 /* 配達先の1行。o: {id, num, cls, name, addr, side, extra, del:{a,label}, drag, flag} */
 function stopRow(o){
-  return `<div class="srow ${o.cls||''} ${o.del?'del':''} ${o.drag?'can':''}" data-id="${o.id||''}">
+  return `<div class="srow ${o.cls||''} ${o.del?'del':''} ${o.del&&o.del.went?'two':''} ${o.drag?'can':''}" data-id="${o.id||''}">
+    ${o.del && o.del.went ? `<button class="row-went" data-a="wentRun" data-id="${o.id}">行った</button>` : ''}
     ${o.del ? `<button class="row-del" data-a="${o.del.a}" data-id="${o.id}">${o.del.label}</button>` : ''}
     <div class="row-body" ${o.tap ? `data-a="stop" data-id="${o.id}" data-ctx="${o.tap}"` : ''}><div class="rail"><span class="node">${o.num}</span></div>
       <div class="txt"><div class="nm">${esc(o.name)}${o.extra||''}</div>${o.addr ? `<div class="ad">${esc(o.addr)}</div>` : ''}</div>
@@ -1335,7 +1407,7 @@ function vGo(){
     <div style="height:14px"></div>
     ${pick(rest ? `このあと ${rest}件` : 'このあと', '地図')}
     ${tab === 'map' ? `<div id="map" class="tall run"></div>` : rest ? `
-      <div class="card"><div data-sort="run">${Array.from({length: show}, (_, k) => rowOf(t.idx + 1 + k, { cls: k === 0 ? 'first' : '', del:{ a:'delRun', label:'行かない' }, drag:true, tap:'run' })).join('')}</div>
+      <div class="card"><div data-sort="run">${Array.from({length: show}, (_, k) => rowOf(t.idx + 1 + k, { cls: k === 0 ? 'first' : '', del:{ a:'delRun', label:'行かない', went:true }, drag:true, tap:'run' })).join('')}</div>
       ${show === rest ? depRow('着', hm(e.end), 'last') : ''}</div>
       ${rest > 4 ? `<button class="btn quiet" data-a="toggleAll">${S.showAll ? '少なく表示' : 'あと' + (rest - 4) + '件も見る'}</button>` : ''}` : '<p class="hint" style="text-align:center;margin-top:16px">これが最後の1件です</p>'}`;
   const nx = byId(t.order[t.idx + 1]), chain = !!S.cfg.chain;
@@ -1493,7 +1565,7 @@ function renderSheet(){
     else if (ctx === 'reg' && st.state !== 'done') acts = act('delRegRun', IC.ban, '今日は行かない', 'この便から外します', true);
     else if (ctx === 'ready') acts = act('delReady', IC.ban, 'この便から外す', '', true);
     else if (ctx === 'rev' && (revDayObj().history || []).some(x => x.id === S.stopTrip)) acts = `<button class="opt" data-a="delStop" data-id="${id}" data-trip="${esc(S.stopTrip)}" style="color:var(--red)">${IC.x.replace('class="ic"','class="ic" style="color:var(--red)"')}<div><b>この配達の記録を消す</b><span>テストの記録を消す時に。メモは残ります</span></div></button>`;
-    else if (ctx === 'run') acts = act('first', IC.up, '次に行く', 'この薬局を次の配達先にします') + act('drop', IC.ban, '今日は行かない', 'この便から外します', true);
+    else if (ctx === 'run') acts = act('went', IC.check, 'もう行った', 'ナビを使わずに配達した時に') + act('first', IC.up, '次に行く', 'この薬局を次の配達先にします') + act('drop', IC.ban, '今日は行かない', 'この便から外します', true);
     o.innerHTML = wrap(`<h2>${esc(p.name)}</h2><div class="sub">${esc(shortAddr(p.addr))}${p.tel ? '　' + esc(p.tel) : ''}</div>
       <div class="label" style="margin-top:0"><span>メモ（次に行く時、配達の画面に出ます）</span></div>
       <div class="card pad">
@@ -1532,9 +1604,9 @@ function renderSheet(){
     </div><div style="height:8px"></div>`);
   } else if (S.sheet === 'rest'){
     const e2 = etas(t), ids = t.order.slice(t.idx + 1);
-    o.innerHTML = wrap(`<h2>このあと ${ids.length}件</h2><div class="sub">タップでメモ、長押しして動かすと入れ替え、左にスワイプで外せます</div>
+    o.innerHTML = wrap(`<h2>このあと ${ids.length}件</h2><div class="sub">タップでメモ、長押しで入れ替え、左にスワイプで「行った」「行かない」</div>
       <div class="card"><div data-sort="run">${ids.map((rid, k) => { const rp = byId(rid) || { name:rid, addr:'' }, rs = t.stops.find(z => z.id === rid) || {};
-        return stopRow({ id:rid, num: t.idx + 2 + k, cls: k === 0 ? 'first' : '', name: rp.name, addr: shortAddr(rp.addr), side: hm(e2.list[t.idx + 1 + k]), del:{ a:'delRun', label:'行かない' }, drag:true, tap:'run',
+        return stopRow({ id:rid, num: t.idx + 2 + k, cls: k === 0 ? 'first' : '', name: rp.name, addr: shortAddr(rp.addr), side: hm(e2.list[t.idx + 1 + k]), del:{ a:'delRun', label:'行かない', went:true }, drag:true, tap:'run',
           extra: (rs.closedAt ? ' <span class="chip red">閉まっていた</span>' : closedToday(rp, t.shift) ? ' <span class="chip red">午後休診</span>' : '') + (tagsOf(rp).length || rp.note ? ' <span class="chip amber">メモ</span>' : '') }); }).join('')}</div>
         ${stopRow({ num:'着', cls:'term last', name:(S.cfg.depot && S.cfg.depot.name) || '営業所', side: hm(e2.end) })}</div><div style="height:8px"></div>`);
   } else if (S.sheet === 'proof'){
@@ -1576,7 +1648,7 @@ function initSort(){
     if (!el.dataset.sort) return;
     sorters.push(new Sortable(el, {
       draggable: '.srow.can', animation: 160, delay: 260, delayOnTouchOnly: false, touchStartThreshold: 6,
-      forceFallback: true, fallbackOnBody: true, fallbackTolerance: 4, filter: '.row-del,.flag', preventOnFilter: false,
+      forceFallback: true, fallbackOnBody: true, fallbackTolerance: 4, filter: '.row-del,.row-went,.flag', preventOnFilter: false,
       onChoose: ev => { sorting = true; held = { id: ev.item.dataset.id, moved: false }; closeSwipes(); },
       onStart: () => { if (held) held.moved = true; },
       onUnchoose: () => { sorting = false; const h = held; held = null; if (h && !h.moved && h.id) ACT.stop({ id: h.id, ctx: el.dataset.sort }); },
@@ -1607,7 +1679,7 @@ document.addEventListener('pointerdown', e => {
   closeSwipes(body && body.parentNode);
   if (!body) return;
   const row = body.parentNode;
-  sw = { body, row, x: e.clientX, y: e.clientY, base: row.classList.contains('open') ? -DEL_W : 0, on: false, cur: 0, id: e.pointerId, full: !!row.closest('[data-sort="reg"]') };
+  sw = { body, row, x: e.clientX, y: e.clientY, w: row.classList.contains('two') ? DEL_W * 2 : DEL_W, base: row.classList.contains('open') ? -(row.classList.contains('two') ? DEL_W * 2 : DEL_W) : 0, on: false, cur: 0, id: e.pointerId, full: !!row.closest('[data-sort="reg"]') };
 });
 document.addEventListener('pointermove', e => {
   if (!sw || sorting || e.pointerId !== sw.id) return;
@@ -1618,7 +1690,7 @@ document.addEventListener('pointermove', e => {
     sw.on = true; sw.body.style.transition = 'none';
     try{ sw.body.setPointerCapture(sw.id); }catch(err){}
   }
-  sw.cur = Math.max(-sw.body.offsetWidth, Math.min(0, sw.base + dx));
+  sw.cur = Math.max(sw.full ? -sw.body.offsetWidth : -sw.w - 24, Math.min(0, sw.base + dx));
   sw.body.style.transform = `translateX(${sw.cur}px)`;
 });
 function endSwipe(e){
@@ -1631,11 +1703,11 @@ function endSwipe(e){
     s.body.style.transform = 'translateX(-100%)';
     const btn = s.row.querySelector('.row-del');
     setTimeout(() => ACT[btn.dataset.a](btn.dataset, btn), 150);
-  } else if (s.cur < -DEL_W / 2){ s.row.classList.add('open'); s.body.style.transform = `translateX(${-DEL_W}px)`; }
+  } else if (s.cur < (s.base ? -s.w + 30 : -44)){ s.row.classList.add('open'); s.body.style.transform = `translateX(${-s.w}px)`; }
   else { s.row.classList.remove('open'); s.body.style.transform = ''; }
 }
 document.addEventListener('pointerup', endSwipe);
-document.addEventListener('pointercancel', () => { if (sw && sw.on){ sw.body.style.transition = ''; sw.body.style.transform = sw.row.classList.contains('open') ? `translateX(${-DEL_W}px)` : ''; } sw = null; });
+document.addEventListener('pointercancel', () => { if (sw && sw.on){ sw.body.style.transition = ''; sw.body.style.transform = sw.row.classList.contains('open') ? `translateX(${-sw.w}px)` : ''; } sw = null; });
 
 /* シートは、上のつまみを下に引いても閉じられる */
 let pull = null;
@@ -1715,6 +1787,8 @@ const ACT = {
     save(); buildRoute(t.shift, ids);
   },
   delRun: d => dropStop(d.id),
+  wentRun: d => wentStop(d.id),
+  went: d => wentStop(d.id),
   delRegRun: d => { S.day.active = S.shift; dropStop(d.id); },
   clearAll: () => {
     const t = S.day.trips[S.shift], keep = t.stops.slice(); if (!keep.length) return;

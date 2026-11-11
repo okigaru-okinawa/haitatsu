@@ -159,6 +159,30 @@ main{padding:10px 16px 0;max-width:560px;margin:0 auto}
 .done-card{margin-bottom:0}
 .link-rail{width:4px;height:12px;background:var(--green);margin-left:26px}
 @media (prefers-reduced-motion:reduce){.sign.now,.sign.going,.live{animation:none}}
+.exit{margin-top:10px;padding:14px 14px 12px}
+.exit-h{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--ink2);margin-bottom:10px}
+.exit-h b{font-size:15px;color:var(--ink)}
+.exit-b{display:flex;align-items:center;gap:16px;margin-bottom:12px}
+#dial{position:relative;width:96px;height:96px;flex:none;border:0;background:transparent;padding:0}
+.d-ring{position:absolute;inset:0;border-radius:50%;border:3px solid var(--rule)}
+.d-ring span{position:absolute;top:-10px;left:50%;transform:translateX(-50%);font-size:11px;font-weight:800;color:var(--red);background:var(--card);padding:0 4px;line-height:16px}
+.d-arrow{position:absolute;inset:12px;display:flex;align-items:center;justify-content:center}
+.d-arrow svg{width:100%;height:100%;fill:var(--blue);stroke:var(--card);stroke-width:1;stroke-linejoin:round;filter:drop-shadow(0 2px 4px rgba(0,122,255,.35))}
+#dial.live .d-ring{border-color:var(--blue-soft)}
+.exit-t .big{font-size:26px;font-weight:800;line-height:1.2}
+.exit-t .sub{font-size:13px;color:var(--ink2);line-height:1.45;margin-top:2px}
+.exit-t .on{color:var(--green);font-weight:700}
+#exitmap{height:200px;border-radius:12px;background:var(--rule);z-index:0}
+.exit-cap{display:flex;gap:14px;align-items:center;font-size:12px;color:var(--ink2);margin-top:8px;flex-wrap:wrap}
+.exit-cap i{display:inline-block;vertical-align:-1px;margin-right:5px}
+.exit-cap .c-me{width:11px;height:11px;border-radius:50%;background:var(--blue);border:2px solid #fff;box-shadow:0 0 0 1px var(--blue)}
+.exit-cap .c-ln{width:20px;height:5px;border-radius:3px;background:var(--blue);vertical-align:2px}
+.me{position:relative;width:22px;height:22px}
+.me .dot{position:absolute;inset:3px;border-radius:50%;background:#007AFF;border:3px solid #fff;box-shadow:0 0 0 1px rgba(0,122,255,.6),0 1px 4px rgba(0,0,0,.4)}
+.me .halo{position:absolute;inset:-9px;border-radius:50%;background:rgba(0,122,255,.22);animation:live 1.8s ease-in-out infinite}
+.me .beam{position:absolute;left:50%;top:50%;width:0;height:0;margin:-46px 0 0 -22px;border-left:22px solid transparent;border-right:22px solid transparent;border-bottom:46px solid rgba(0,122,255,.28);transform-origin:50% 100%;display:none}
+.me.has-h .beam{display:block}
+.arw{width:0;height:0;border-left:9px solid transparent;border-right:9px solid transparent;border-bottom:16px solid #fff;filter:drop-shadow(0 0 2px rgba(0,60,140,.9))}
 .steps{display:flex;gap:3px;margin:0 2px 12px}
 .steps i{flex:1;height:5px;border-radius:3px;background:var(--rule)}
 .steps i.d{background:var(--green)}
@@ -278,7 +302,7 @@ summary{font-size:14px;color:var(--ink2);padding:8px 4px}
    配達ルートアプリ
    データは端末（localStorage）に保存し、スプレッドシートとは Apps Script 経由で裏で同期する
    ========================================================= */
-const VERSION = 'v24';
+const VERSION = 'v25';
 const AUTO_DONE_METERS = 250;       // アプリに戻った時、この距離以内なら自動で完了
 const MAX_WP = 25;                  // Routes API で1回に扱える経由地の上限
 const TAG_LIST = ['裏口','右側','左側','駐車しにくい','駐車場あり','昼休みあり','受付に時間がかかる'];
@@ -861,6 +885,116 @@ async function drawMap(){
   if (all.length) m.fitBounds(all, { padding:[28,28], maxZoom:16 });
 }
 
+/* ---------- 出る方向（コンパスの矢印と小さな地図） ----------
+   配達を終えて駐車場を出る時、「右か左か」ではなく、進む方向そのものを見せる。
+   矢印は iPhone の方位センサーで実際の方向を指す。地図は、今いる場所と、そこから出ていく道の線 */
+let heading = null, compassOn = false, exitMap = null, exitSeq = 0;
+const WIND = ['北','北東','東','南東','南','南西','西','北西'];
+function bearing(a, b){
+  const r = x => x * Math.PI / 180;
+  const y = Math.sin(r(b.lng - a.lng)) * Math.cos(r(b.lat));
+  const x = Math.cos(r(a.lat)) * Math.sin(r(b.lat)) - Math.sin(r(a.lat)) * Math.cos(r(b.lat)) * Math.cos(r(b.lng - a.lng));
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+/* 今の区間の「出てすぐの道」。道の線があればその最初の150mの向き、なければ次の所への直線の向き */
+function exitInfo(t){
+  const leg = curLeg(t, t.idx), dep = S.cfg.depot;
+  const prevP = t.idx ? byId(t.order[t.idx - 1]) : null, nextP = byId(t.order[t.idx]);
+  const from = prevP ? pt(prevP) : dep, to = nextP ? pt(nextP) : dep;
+  if (leg && leg.poly){
+    const line = decodePoly(leg.poly).map(([lat, lng]) => ({ lat, lng }));
+    if (line.length > 1){
+      let d = 0, k = 1;
+      while (k < line.length - 1){ d += meters(line[k-1], line[k]); if (d >= 150) break; k++; }
+      return { road:true, line, start: line[0], deg: bearing(line[0], line[k]) };
+    }
+  }
+  if (!from || !to) return null;
+  return { road:false, line:[from, to], start: from, deg: bearing(from, to) };
+}
+function exitHtml(t){
+  const x = exitInfo(t); if (!x) return '';
+  if (S.cfg.exitHide) return `<button class="btn quiet" data-a="exitToggle" style="margin-top:6px">出る方向を見る</button>`;
+  return `<div class="card exit">
+    <div class="exit-h"><b>${x.road ? '道に出たら、この方向へ' : '次の配達先は、この方角'}</b><button class="lkbtn" data-a="exitToggle">隠す</button></div>
+    <div class="exit-b">
+      <button id="dial" data-a="compass" data-deg="${Math.round(x.deg)}" aria-label="進む方向"><div class="d-ring"><span>北</span></div><div class="d-arrow"><svg viewBox="0 0 24 24"><path d="M12 2 20 21l-8-4.5L4 21z"/></svg></div></button>
+      <div class="exit-t"><div class="big">${WIND[Math.round(x.deg / 45) % 8]}へ</div><div class="sub" id="dialSub"></div></div>
+    </div>
+    <div id="exitmap"></div>
+    <div class="exit-cap"><span><i class="c-me"></i>今いる場所</span><span><i class="c-ln"></i>${x.road ? '進む道' : '次の配達先への直線'}</span><span>地図の上が北</span></div>
+  </div>`;
+}
+function updateDial(){
+  const el = document.getElementById('dial');
+  if (el){
+    const deg = Number(el.dataset.deg), h = heading === null ? 0 : heading;
+    el.querySelector('.d-arrow').style.transform = `rotate(${deg - h}deg)`;
+    el.querySelector('.d-ring').style.transform = `rotate(${-h}deg)`;
+    el.classList.toggle('live', heading !== null);
+    const sub = document.getElementById('dialSub');
+    if (sub){
+      const txt = heading !== null ? '<span class="on">矢印が実際の方向を指しています。</span>iPhoneを前に向けて持ってね'
+        : compassOn ? '向きを読み取っています…（動かない時は、円の上が北です）'
+        : '丸をタップすると、iPhoneの向きに合わせて矢印が回ります';
+      if (sub.dataset.k !== txt){ sub.dataset.k = txt; sub.innerHTML = txt; }
+    }
+  }
+  const beam = document.querySelector('.me');
+  if (beam){ beam.classList.toggle('has-h', heading !== null); if (heading !== null) beam.querySelector('.beam').style.transform = `rotate(${heading}deg)`; }
+}
+function onOrient(e){
+  let h = null;
+  if (typeof e.webkitCompassHeading === 'number' && e.webkitCompassHeading >= 0) h = e.webkitCompassHeading;   // iPhone
+  else if (e.absolute && typeof e.alpha === 'number') h = (360 - e.alpha) % 360;                                // Android
+  if (h === null) return;
+  heading = h; updateDial();
+}
+/* 方位センサーを使い始める。iPhone では、ボタンを押した時にしか許可を求められない */
+function enableCompass(){
+  if (compassOn || !window.DeviceOrientationEvent) return;
+  const go = () => { compassOn = true; window.addEventListener('deviceorientationabsolute', onOrient, true); window.addEventListener('deviceorientation', onOrient, true); updateDial(); };
+  try{
+    if (typeof DeviceOrientationEvent.requestPermission === 'function') DeviceOrientationEvent.requestPermission().then(r => { if (r === 'granted') go(); else toast('向きを使えないので、円の上が北です'); }).catch(() => {});
+    else go();
+  }catch(e){}
+}
+async function drawExit(){
+  const my = ++exitSeq;
+  try{ await loadLeaflet(); }catch(e){ const el = document.getElementById('exitmap'); if (el) el.style.display = 'none'; return; }
+  const t = curTrip(), x = t.order ? exitInfo(t) : null;
+  let el = document.getElementById('exitmap');
+  if (my !== exitSeq || !el || !x) return;
+  const pos = await here().catch(() => null);
+  el = document.getElementById('exitmap');
+  if (my !== exitSeq || !el) return;
+  if (exitMap){ try{ exitMap.remove(); }catch(e){} exitMap = null; }
+  const L = window.L, m = exitMap = L.map(el, { zoomControl:false });
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19, attribution:'&copy; OpenStreetMap' }).addTo(m);
+  const ll = p => [p.lat, p.lng];
+  L.polyline(x.line.map(ll), { color:'#fff', weight:10, opacity:.9 }).addTo(m);
+  L.polyline(x.line.map(ll), { color:'#007AFF', weight:6, opacity:1 }).addTo(m);
+  /* 進む向きが分かるように、線の上に矢じりを置く（出てすぐと、その先） */
+  const view = [ll(x.start)];
+  if (x.road){
+    let d = 0, next = 60;
+    for (let i = 1; i < x.line.length && d < 420; i++){
+      d += meters(x.line[i-1], x.line[i]);
+      if (d >= next){
+        L.marker(ll(x.line[i]), { interactive:false, icon: L.divIcon({ className:'', html:`<div class="arw" style="transform:rotate(${Math.round(bearing(x.line[i-1], x.line[i]))}deg)"></div>`, iconSize:[18,16], iconAnchor:[9,8] }) }).addTo(m);
+        next += 130;
+      }
+      view.push(ll(x.line[i]));
+    }
+  } else view.push(ll(x.line[1]));
+  /* 今いる場所（電波で分からない時は、区間の出発点）。扇は iPhone が向いている方向 */
+  const me = (pos && meters(pos, x.start) < 600) ? pos : x.start;
+  L.marker(ll(me), { interactive:false, zIndexOffset:1000, icon: L.divIcon({ className:'', html:'<div class="me"><div class="beam"></div><div class="halo"></div><div class="dot"></div></div>', iconSize:[22,22], iconAnchor:[11,11] }) }).addTo(m);
+  view.push(ll(me));
+  m.fitBounds(view, { padding:[26,26], maxZoom:18 });
+  updateDial();
+}
+
 /* ---------- 画面の部品 ---------- */
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -911,6 +1045,8 @@ function render(){
   renderSheet();
   initSort();
   if (document.getElementById('map')) drawMap(); else mapSeq++;
+  if (document.getElementById('exitmap')) drawExit(); else exitSeq++;
+  updateDial();
 }
 
 /* ---------- 登録 ---------- */
@@ -1024,7 +1160,7 @@ function vGo(){
   if (!id){
     $('#main').innerHTML = head + `
       <div class="sign"><div class="eyebrow"><span>全部まわりました</span></div><div class="name">営業所へ戻る</div>
-        <div class="figs"><div class="fig"><small>ここから</small><b>${mins(e.backSec)}<span>分</span></b></div><div class="fig"><small>着く予定</small><b>${hm(e.end)}</b></div></div></div>`;
+        <div class="figs"><div class="fig"><small>ここから</small><b>${mins(e.backSec)}<span>分</span></b></div><div class="fig"><small>着く予定</small><b>${hm(e.end)}</b></div></div></div>${t.navAt ? '' : exitHtml(t)}`;
     setBar(`<button class="btn primary" data-a="navDepot">${IC.nav}<span class="bt"><b>ナビ開始</b><small>営業所へ・約${mins(e.backSec)}分</small></span></button><div class="more"><button class="btn" data-a="finish">便を終える</button><button class="btn" data-a="sheet" data-s="add">配達先を追加</button></div>`);
     return;
   }
@@ -1044,6 +1180,7 @@ function vGo(){
     ${t.breakAt ? `<div class="memo" style="display:flex;align-items:center;gap:10px"><span class="grow">休憩中（${hm(t.breakAt)}から）</span><button class="mini" data-a="breakEnd">休憩を終える</button></div>` : ''}
     ${closedOffer(p, t.stops.find(x => x.id === id))}
     ${memoHtml(p, t.shift)}
+    ${going ? '' : exitHtml(t)}
     <div style="height:14px"></div>
     ${pick(rest ? `このあと ${rest}件` : 'このあと', '地図')}
     ${tab === 'map' ? `<div id="map" class="tall run"></div>` : rest ? `
@@ -1415,6 +1552,8 @@ const ACT = {
   first: d => { S.sheet = null; reroute('先に行く', { firstId: d.id, fixed: curTrip().manual }); },
   drop: d => { S.sheet = null; dropStop(d.id); },
   addrun: d => { S.sheet = null; renderSheet(); addToTrip(curTrip(), d.id); },
+  compass: () => { enableCompass(); updateDial(); },
+  exitToggle: () => { S.cfg.exitHide = !S.cfg.exitHide; save(); render(); },
   toggleAll: () => { S.showAll = !S.showAll; render(); },
   toggleDone: () => { S.showDone = !S.showDone; render(); },
   goTab: d => { S.goTab = d.t; render(); },
@@ -1482,6 +1621,7 @@ document.addEventListener('click', ev => {
   const el = ev.target.closest('[data-a]');
   if (!el) return;
   if (el.classList.contains('sheet-bg') && ev.target !== el) return;   // シートの中の空白では閉じない
+  if (['done','start','undoDone','later','closedNow'].includes(el.dataset.a) && !S.cfg.exitHide) enableCompass();
   const fn = ACT[el.dataset.a];
   if (fn) fn(el.dataset, el);
 });

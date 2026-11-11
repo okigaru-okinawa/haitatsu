@@ -403,7 +403,7 @@ summary{font-size:14px;color:var(--ink2);padding:8px 4px}
    配達ルートアプリ
    データは端末（localStorage）に保存し、スプレッドシートとは Apps Script 経由で裏で同期する
    ========================================================= */
-const VERSION = 'v28';
+const VERSION = 'v29';
 const AUTO_DONE_METERS = 250;       // アプリに戻った時、この距離以内なら自動で完了
 const MAX_WP = 25;                  // Routes API で1回に扱える経由地の上限
 const TAG_LIST = ['裏口','右側','左側','駐車しにくい','駐車場あり','昼休みあり','受付に時間がかかる'];
@@ -1676,7 +1676,8 @@ function closeSwipes(except){
 }
 document.addEventListener('pointerdown', e => {
   const body = e.target.closest('.srow.del .row-body');
-  closeSwipes(body && body.parentNode);
+  const onBtn = e.target.closest('.row-del,.row-went');   // 開いたボタンを押す時は、閉じない（閉じると下の行を押したことになる）
+  closeSwipes(onBtn ? onBtn.parentNode : body && body.parentNode);
   if (!body) return;
   const row = body.parentNode;
   sw = { body, row, x: e.clientX, y: e.clientY, w: row.classList.contains('two') ? DEL_W * 2 : DEL_W, base: row.classList.contains('open') ? -(row.classList.contains('two') ? DEL_W * 2 : DEL_W) : 0, on: false, cur: 0, id: e.pointerId, full: !!row.closest('[data-sort="reg"]') };

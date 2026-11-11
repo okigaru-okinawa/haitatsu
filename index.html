@@ -74,6 +74,7 @@ main{padding:10px 16px 0;max-width:560px;margin:0 auto}
 .clear svg{width:14px;height:14px;color:inherit}
 .nextmemo{background:var(--amber-soft);color:var(--amber);border-radius:12px;padding:8px 12px;margin-bottom:8px;font-size:14px;font-weight:600;line-height:1.4}
 .nextmemo b{display:block;font-size:12px;opacity:.85}
+.testbar{background:var(--amber-soft);color:var(--amber);font-size:13px;font-weight:700;text-align:center;border-radius:10px;padding:6px 10px;margin-top:6px}
 .newlink{display:flex;align-items:center;gap:6px;border:0;background:transparent;color:var(--blue);font-size:15px;font-weight:600;padding:12px 4px 4px}
 .newlink svg{width:18px;height:18px}
 .quick{display:flex;gap:8px;overflow-x:auto;padding:10px 2px 2px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
@@ -277,7 +278,7 @@ summary{font-size:14px;color:var(--ink2);padding:8px 4px}
    配達ルートアプリ
    データは端末（localStorage）に保存し、スプレッドシートとは Apps Script 経由で裏で同期する
    ========================================================= */
-const VERSION = 'v23';
+const VERSION = 'v24';
 const AUTO_DONE_METERS = 250;       // アプリに戻った時、この距離以内なら自動で完了
 const MAX_WP = 25;                  // Routes API で1回に扱える経由地の上限
 const TAG_LIST = ['裏口','右側','左側','駐車しにくい','駐車場あり','昼休みあり','受付に時間がかかる'];
@@ -349,6 +350,7 @@ function readSetup(text){
     if (!o.u || !o.t) return false;
     const fresh = S.cfg.url !== o.u || S.cfg.t !== o.t;
     S.cfg.url = o.u; S.cfg.t = o.t;
+    if (o.x) S.cfg.test = true;
     if (o.d && !S.cfg.depot) S.cfg.depot = o.d;
     save();
     return fresh ? 'new' : 'same';
@@ -356,7 +358,7 @@ function readSetup(text){
 }
 function setupHash(){
   if (!S.cfg.url) return '';
-  const o = { u: S.cfg.url, t: S.cfg.t }; if (S.cfg.depot) o.d = S.cfg.depot;
+  const o = { u: S.cfg.url, t: S.cfg.t }; if (S.cfg.depot) o.d = S.cfg.depot; if (S.cfg.test) o.x = 1;
   return '#setup=' + encodeURIComponent(btoa(unescape(encodeURIComponent(JSON.stringify(o)))));
 }
 function keepSetupInUrl(){ try{ if (S.cfg.url) history.replaceState(null, '', location.pathname + setupHash()); }catch(e){} }
@@ -370,6 +372,7 @@ function keepSetupInUrl(){ try{ if (S.cfg.url) history.replaceState(null, '', lo
 /* ---------- 通信（Apps Script） ---------- */
 async function api(body){
   if (!S.cfg.url) throw new Error('先に接続設定が必要です');
+  if (S.cfg.test && ['add','delTrip','delStop','note','visit','log'].includes(body.a)){ const e = new Error('テストモードでは保存できません'); e.server = true; throw e; }
   const res = await fetch(S.cfg.url, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({...body, t:S.cfg.t}) });
   const j = await res.json();
   if (!j.ok){ const e = new Error(j.error || '通信エラー'); e.server = true; throw e; }
@@ -388,7 +391,8 @@ async function loadMaster(silent){
   }catch(e){ if (!silent){ busy(false); toast('配達先リストを取れませんでした'); } }
 }
 /* 記録は裏で送る。送れなかった分は端末に貯めて、次の機会にまとめて送る */
-function enqueue(item){ S.queue.push(item); LS.set('queue', S.queue); flush(); }
+function enqueue(item){ if (S.cfg.test) return;   /* テストモードでは何も送らない */
+  S.queue.push(item); LS.set('queue', S.queue); flush(); }
 async function flush(){
   if (flushing || !S.queue.length || !S.cfg.url) return;
   flushing = true;
@@ -884,7 +888,7 @@ function toast(m, act){
 }
 function busy(m){ $('#overlay').innerHTML = m ? `<div class="loading">${esc(m)}</div>` : ''; }
 function setBar(html){ const b = $('#bar'); b.innerHTML = html ? `<div>${html}</div>` : ''; b.hidden = !html; }
-function title(h, aside){ return `<div class="title"><h1>${h}</h1>${aside ? `<div class="aside">${aside}</div>` : ''}</div>`; }
+function title(h, aside){ return (S.cfg.test ? `<div class="testbar">テストモード：記録やメモは保存されません</div>` : '') + `<div class="title"><h1>${h}</h1>${aside ? `<div class="aside">${aside}</div>` : ''}</div>`; }
 function memoHtml(p, shift){
   const tg = plainTags(p), cd = closedDays(p), dw = dwellTag(p);
   const warn = closedToday(p, shift) ? `<div class="memo closed">今日は午後休診の日です。受け取れるか確認を</div>` : '';
@@ -1085,6 +1089,7 @@ async function eraseRecords(body, doneMsg, localFn){
     localFn(); busy(false); toast(doneMsg); loadMaster(true); render();
   }catch(e){
     busy(false);
+    if (S.cfg.test){ localFn(); toast('この端末から消しました（テストモード）'); render(); return; }
     toast(e.server && /unknown action/.test(e.message) ? 'スプレッドシート側の更新がまだです（Apps Scriptを新しくしてね）' : '通信できなかったので、消せませんでした');
   }
 }
@@ -1113,6 +1118,8 @@ function vSet(){
     <div class="seg" style="grid-template-columns:repeat(5,1fr)">${[3,4,5,6,8].map(n => `<button data-a="dwellBase" data-n="${n}" class="${(S.cfg.dwell || 3) === n ? 'on' : ''}">${n}分</button>`).join('')}</div>
     <div class="label"><span>連続ナビ</span><span>完了を押すと、次のナビをそのまま開く</span></div>
     <div class="seg"><button data-a="chain" data-on="0" class="${S.cfg.chain ? '' : 'on'}">使わない</button><button data-a="chain" data-on="1" class="${S.cfg.chain ? 'on' : ''}">使う</button></div>
+    <div class="label"><span>テストモード</span><span>記録やメモをスプレッドシートに送らない</span></div>
+    <div class="seg"><button data-a="testMode" data-on="0" class="${S.cfg.test ? '' : 'on'}">ふつうに使う</button><button data-a="testMode" data-on="1" class="${S.cfg.test ? 'on' : ''}">テストモード</button></div>
     <div class="label"><span>画面の色</span></div>
     <div class="seg three">${[['light','明るい'],['dark','暗い'],['auto','自動']].map(([k,l]) => `<button data-a="theme" data-th="${k}" class="${(S.cfg.theme||'light')===k?'on':''}">${l}</button>`).join('')}</div>
     <div class="label"><span>ホーム画面のアプリに設定を移す</span></div>
@@ -1432,6 +1439,7 @@ const ACT = {
     const m = Math.max(1, Math.round((Date.now() - t.breakAt) / 60000));
     t.breakMin = (t.breakMin || 0) + m; t.breakAt = null; logChange('休憩 ' + m + '分', '', null); save(); render(); toast('休憩 ' + m + '分を記録しました');
   },
+  testMode: d => { S.cfg.test = d.on === '1'; if (S.cfg.test){ S.queue = []; LS.set('queue', []); } save(); keepSetupInUrl(); render(); },
   chain: d => { S.cfg.chain = d.on === '1'; save(); render(); },
   dwellBase: d => { S.cfg.dwell = Number(d.n); save(); render(); },
   park: async d => {

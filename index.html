@@ -270,7 +270,14 @@ html.land main.two .sign.compact{gap:14px;padding:10px 14px}
 .drow .nm{color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .drow .tm{color:var(--ink3);font-size:15px}
 .drow button{border:0;background:var(--green-soft);color:var(--green);font-weight:700;font-size:13px;border-radius:8px;padding:6px 10px;flex:none}
-.lkbtn{border:0;background:transparent;color:var(--blue);font-size:13px;padding:0}
+.lkbtn{align-self:center;border:0;background:var(--card);color:var(--blue);font-size:13px;font-weight:600;padding:6px 10px 6px 12px;border-radius:99px;margin:-8px 0 -4px;display:inline-flex;align-items:center;gap:5px;box-shadow:0 0 0 1px var(--rule);position:relative}
+.lkbtn::after{content:"";position:absolute;inset:-8px -6px}
+.lkbtn:active{background:var(--rule)}
+.lkbtn .chev{width:7px;height:7px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:translateY(-2px) rotate(45deg)}
+.lkbtn .chev.up{transform:translateY(2px) rotate(-135deg)}
+.cand.going{pointer-events:none;height:0!important;padding-top:0;padding-bottom:0;opacity:0;overflow:hidden;border-top-color:transparent;transition:height .18s ease,padding .18s ease,opacity .12s ease}
+.cand.allin .okdot{width:28px;height:28px;border-radius:50%;background:var(--green-soft);color:var(--green);display:flex;align-items:center;justify-content:center;flex:none}
+.cand.allin .okdot .ic{width:16px;height:16px}
 .sign-btn{margin-left:auto;align-self:flex-end;border:1.5px solid rgba(255,255,255,.7);background:rgba(255,255,255,.14);color:#fff;border-radius:12px;padding:9px 12px;font-size:15px;font-weight:700;display:flex;align-items:center;gap:4px}
 .sign-btn svg{width:16px;height:16px;stroke-width:3}
 .prevbar{display:flex;align-items:center;gap:10px;background:var(--green-soft);color:var(--green);border-radius:12px;padding:8px 8px 8px 12px;margin-bottom:10px;font-size:14px;font-weight:600}
@@ -403,7 +410,7 @@ summary{font-size:14px;color:var(--ink2);padding:8px 4px}
    配達ルートアプリ
    データは端末（localStorage）に保存し、スプレッドシートとは Apps Script 経由で裏で同期する
    ========================================================= */
-const VERSION = 'v29';
+const VERSION = 'v30';
 const AUTO_DONE_METERS = 250;       // アプリに戻った時、この距離以内なら自動で完了
 const MAX_WP = 25;                  // Routes API で1回に扱える経由地の上限
 const TAG_LIST = ['裏口','右側','左側','駐車しにくい','駐車場あり','昼休みあり','受付に時間がかかる'];
@@ -564,12 +571,13 @@ function scoreTerm(k, raw){
   return sc;
 }
 /* 空白で区切った言葉は「全部に当てはまる薬局」を探す（例：とまと うらそえ） */
-function searchOne(raw){
+function searchOne(raw, skip){
   const terms = String(raw||'').trim().split(/\s+/).filter(Boolean);
   if (!terms.length) return [];
   const usage = LS.get('usage', {});
   const res = [];
   for (const p of S.master){
+    if (skip && skip.has(p.id)) continue;
     const k = keys(p);
     let sum = 0, ok = true;
     for (const t of terms){ const sc = scoreTerm(k, t); if (!sc){ ok = false; break; } sum += sc; }
@@ -793,9 +801,15 @@ function addToTrip(t, id){
   if (old){ old.state = 'todo'; old.added = true; } else t.stops.push({ id, pin:false, state:'todo', added: t.status === 'run' });
   save();
   if (t.status === 'run'){
+    /* 配達中：まず順番に入れて画面はすぐ返し、道の計算は裏でまとめて1回だけ */
     const rest = t.order.slice(t.idx);
-    if (t.manual) reroute('追加', { ids: insertBest(rest, id, null, S.cfg.depot), fixed:true, target:id });
-    else reroute('追加', { ids: rest.concat(id), target:id });
+    const next = t.manual ? insertBest(rest, id, null, S.cfg.depot) : rest.concat(id);
+    const k = t.idx + next.indexOf(id) - (t.legBase || 0);
+    if (t.legs && k >= 0 && k <= t.legs.length) t.legs.splice(Math.min(k, Math.max(0, t.legs.length - 1)), 0, { sec: 480, m: 2500 });
+    t.order = t.order.slice(0, t.idx).concat(next); save();
+    rerouteSoon('追加', id);
+  } else if (t.status === 'ready' && S.view === 'reg'){
+    t.order = null; t.status = 'plan'; save();   // 登録の画面で足している間は、作り直さない（足し終わってから「ルートを作る」）
   } else if (t.status === 'ready'){
     buildRoute(t.shift, t.manual ? insertBest(t.order, id, S.cfg.depot, S.cfg.depot) : null);
   } else { t.order = null; save(); }
@@ -835,7 +849,7 @@ function complete(auto){
   t.pending = id; t.idx++; t.navAt = null; S.sheet = null; save();
   const p = byId(id);
   if (p){ p.visits = (p.visits||0) + 1; p.last = S.day.date; saveMaster(); }
-  render(); window.scrollTo(0, 0);
+  render(); toHero();
 }
 /* まちがえて完了になった時に、ひとつ戻す（次へ出発する前だけ） */
 function undoDone(){
@@ -957,7 +971,9 @@ async function bgReroute(kind, target, seq){
     t.order = t.order.slice(0, t.idx).concat(order); t.legs = r.legs; t.legBase = t.idx; t.changes++;
     if (t.navAt) t.navAt = Date.now();
     logChange(kind, target || '', pos); save();
-    if (!sorting && !(sw && sw.on) && !document.querySelector('.srow.open')) render();
+    if (S.sheet === 'add') S.added = (S.added || 0) + 1;   // 追加の途中は入力を消さない。閉じた時に描き直す
+    else if (S.view === 'reg'){ if (!$('#q') || document.activeElement !== $('#q')) refreshReg(); }
+    else if (!sorting && !(sw && sw.on) && !document.querySelector('.srow.open')) render();
     if (moved) toast('残りの順番を組み直しました');
   }catch(e){ /* 通信できない時は、今の順番のまま進める */ }
 }
@@ -1233,6 +1249,13 @@ function closedToday(p, shift){
 }
 function setTags(p, list){ p.tags = list.join('、'); saveMaster(); enqueue({ a:'note', id:p.id, tags:p.tags }); }
 let toastEl = null;
+/* 配達の画面を開いた時：青い「つぎはここ」が見える所まで寄せる（完了は直前の2件が上に見える） */
+function toHero(){
+  const h = S.view === 'go' && !isLand() && document.querySelector('#main .sign.now, #main .sign.going');
+  if (!h){ window.scrollTo(0, 0); return; }
+  const y = h.getBoundingClientRect().top + window.scrollY - 150;
+  window.scrollTo(0, y > 60 ? y : 0);
+}
 function toast(m, act){
   if (toastEl) toastEl.remove();
   const d = toastEl = document.createElement('div'); d.className = 'toast'; d.textContent = m;
@@ -1314,11 +1337,13 @@ function candHtml(){
     return (top.length ? `<div class="quick">${top.map(([id]) => `<button data-a="add" data-id="${id}">${IC.plus}${esc(byId(id).name)}</button>`).join('')}</div>` : '')
       + `<button class="newlink" data-a="sheet" data-s="new">${IC.plus}リストにない所を登録する（名前と住所）</button>`;
   }
-  const groups = tokens(S.q).map(tok => ({ tok, res: searchOne(tok) }));
+  const have = new Set(['am','pm'].flatMap(k => live(S.day.trips[k]).map(s => s.id)));
+  const groups = tokens(S.q).map(tok => { const res = searchOne(tok, have); return { tok, res, used: !res.length && searchOne(tok).length }; });
   return groups.map(g => `
     ${groups.length > 1 ? `<div class="label"><span>「${esc(g.tok)}」</span></div>` : '<div style="height:8px"></div>'}
     <div class="card">${g.res.length ? g.res.map(p => `
       <div class="cand" data-a="add" data-id="${p.id}" data-tok="${esc(g.tok)}"><div class="grow"><div class="nm">${esc(p.name)} ${(p.visits || usage[p.id]) ? '<span class="chip">前に行った</span>' : ''}</div><div class="ad">${esc(shortAddr(p.addr))}</div></div><span class="plus">${IC.plus}</span></div>`).join('')
+      : g.used ? `<div class="cand allin"><span class="okdot">${IC.check}</span><div class="grow"><div class="nm">「${esc(g.tok)}」は ぜんぶ入れました</div><div class="ad">ほかにもあれば、下から探せます</div></div></div>`
       : `<div class="cand"><div class="grow"><div class="nm">リストにはありません</div><div class="ad">Googleマップから探すか、名前と住所で登録できます</div></div><button class="mini" data-a="sheet" data-s="new" data-tok="${esc(g.tok)}">手で登録</button></div>`}
       ${S.gres && S.gres.tok === g.tok ? (S.gres.list.length ? S.gres.list.map((x, i) => `<div class="cand" data-a="gadd" data-i="${i}"><div class="grow"><div class="nm">${esc(x.name)} <span class="chip green">Googleマップ</span></div><div class="ad">${esc(shortAddr(x.addr))}</div></div><span class="plus">${IC.plus}</span></div>`).join('') : `<div class="cand"><div class="grow"><div class="ad">Googleマップでも見つかりませんでした</div></div></div>`)
         : `<button class="as-btn" style="font-size:15px;padding:12px;border-top:.5px solid var(--rule)" data-a="gsearch" data-tok="${esc(g.tok)}">「${esc(g.tok)}」をGoogleマップでも探す</button>`}
@@ -1369,14 +1394,14 @@ function vGo(){
     + doneList();
   function doneList(){
     if (!t.idx) return '';
-    const from = S.showDone ? 0 : Math.max(0, t.idx - 2);
+    const from = S.showDone ? 0 : Math.max(0, t.idx - 5);
     const rows = [];
     for (let i = from; i < t.idx; i++){
       const did = t.order[i], dp = byId(did) || { name: did }, ds = t.stops.find(x => x.id === did) || {};
       rows.push(`<div class="srow done mini-row ${i === from ? 'first' : ''}"><div class="row-body" data-a="stop" data-id="${did}" data-ctx="cur"><div class="rail"><span class="node">${IC.check}</span></div>
         <div class="txt"><div class="nm">${esc(dp.name)}</div></div>${did === prevId ? `<button class="undo" data-a="undoDone">まだだった</button>` : `<div class="side">${hm(ds.doneAt)} 完了</div>`}</div></div>`);
     }
-    return `<div class="label" style="margin-top:0"><span>完了 ${t.idx}件</span>${t.idx > 2 ? `<button class="lkbtn" data-a="toggleDone">${S.showDone ? '最近の2件だけ' : 'すべて見る'}</button>` : ''}</div><div class="card done-card">${rows.join('')}</div><div class="link-rail"></div>`;
+    return `<div class="label" style="margin-top:0"><span>完了 ${t.idx}件</span>${t.idx > 5 ? `<button class="lkbtn" data-a="toggleDone" aria-expanded="${!!S.showDone}">${S.showDone ? 'たたむ' : 'すべて見る'}<i class="chev ${S.showDone ? 'up' : ''}"></i></button>` : ''}</div><div class="card done-card">${rows.join('')}</div><div class="link-rail"></div>`;
   }
 
   if (isLand()){ vGoLand(t, e); return; }
@@ -1618,9 +1643,9 @@ function renderSheet(){
   } else if (S.sheet === 'first'){
     o.innerHTML = wrap(`<h2>先に行く配達先を選ぶ</h2><div class="card noline">${t.order.slice(t.idx).map((id, i) => `<div data-a="first" data-id="${id}">${stopRow({ num: t.idx + i + 1, name: byId(id)?.name || id })}</div>`).join('')}</div><div style="height:8px"></div>`);
   } else if (S.sheet === 'add'){
-    o.innerHTML = wrap(`<h2>配達先を追加</h2><div class="search">${IC.search}<input id="aq" placeholder="名前・住所・電話番号で探す" autocomplete="off" autocorrect="off"></div><div id="acands" style="min-height:160px"></div>`);
+    o.innerHTML = wrap(`<h2>配達先を追加</h2><div class="sub">＋ で続けて足せます。終わったら × で閉じます</div><div class="search">${IC.search}<input id="aq" placeholder="名前・住所・電話番号で探す" autocomplete="off" autocorrect="off"></div><div id="acands" style="min-height:160px"></div>`);
     const aq = $('#aq'); aq.focus({ preventScroll:true });
-    aq.oninput = () => { const r = searchOne(aq.value); $('#acands').innerHTML = aq.value.trim() ? `<div style="height:8px"></div><div class="card">${r.map(p => `<div class="cand" data-a="addrun" data-id="${p.id}"><div class="grow"><div class="nm">${esc(p.name)}</div><div class="ad">${esc(shortAddr(p.addr))}</div></div><span class="plus">${IC.plus}</span></div>`).join('') || '<div class="cand"><div class="grow"><div class="nm">見つかりません</div></div></div>'}</div>` : ''; };
+    aq.oninput = () => { const have = new Set(['am','pm'].flatMap(k => live(S.day.trips[k]).map(s => s.id))); const r = searchOne(aq.value, have); $('#acands').innerHTML = aq.value.trim() ? `<div style="height:8px"></div><div class="card">${r.map(p => `<div class="cand" data-a="addrun" data-id="${p.id}"><div class="grow"><div class="nm">${esc(p.name)}</div><div class="ad">${esc(shortAddr(p.addr))}</div></div><span class="plus">${IC.plus}</span></div>`).join('') || `<div class="cand"><div class="grow"><div class="nm">${searchOne(aq.value).length ? 'ぜんぶ入れました' : '見つかりません'}</div></div></div>`}</div>` : ''; };
   }
 }
 
@@ -1735,15 +1760,17 @@ document.addEventListener('pointercancel', endPull);
 
 /* ---------- 操作 ---------- */
 const ACT = {
-  tab: d => { if (toastEl) toastEl.remove(); S.view = d.v; S.sheet = null; if (d.v === 'go'){ S.showAll = false; S.goTab = 'list'; } if (d.v === 'reg' && S.day.active) S.shift = S.day.active; render(); window.scrollTo(0, 0); },
+  tab: d => { if (toastEl) toastEl.remove(); S.view = d.v; S.sheet = null; if (d.v === 'go'){ S.showAll = false; S.goTab = 'list'; } if (d.v === 'reg' && S.day.active) S.shift = S.day.active; render(); toHero(); },
   shift: d => { S.shift = d.s; render(); },
   clearQ: () => { S.q = ''; refreshReg(); $('#q').focus({ preventScroll:true }); },
-  add: d => {
-    const tk = tokens(S.q);
-    S.q = tk.length > 1 ? tk.filter(x => x !== d.tok).join('、') : '';
-    const t = S.day.trips[S.shift];
-    addToTrip(t, d.id);
-    if (S.view === 'reg' && t.status === 'plan') refreshReg();   // 入力欄は触らない＝キーボードも画面の位置もそのまま
+  add: (d, el) => {
+    /* 検索はそのまま残す。押した行だけ消えて、続けて ＋ で足していける */
+    const t = S.day.trips[S.shift], p = byId(d.id);
+    if (!addToTrip(t, d.id)) return;
+    toast((p ? p.name : '') + ' を追加しました');
+    const row = el && el.closest && el.closest('.cand');
+    const done = () => { if (S.view === 'reg') refreshReg(); };
+    if (row && row.isConnected){ row.style.height = row.offsetHeight + 'px'; row.offsetHeight; row.classList.add('going'); setTimeout(done, 190); } else done();
   },
   gsearch: async d => {
     busy('Googleマップで探しています…');
@@ -1825,11 +1852,18 @@ const ACT = {
   doneNav: () => { complete(false); const t = curTrip(), np = byId(t.order[t.idx]); navTo(np ? destText(np) : S.cfg.depot.lat + ',' + S.cfg.depot.lng); },
   undoDone: () => undoDone(),
   sheet: d => { if (d.s === 'new') S.newName = d.tok || ''; S.sheet = d.s; renderSheet(); initSort(); },
-  close: () => { const was = S.sheet; S.sheet = null; if (was === 'stop') render(); else renderSheet(); },
+  close: () => { const was = S.sheet; S.sheet = null; if (was === 'stop' || (was === 'add' && S.added)){ S.added = 0; render(); } else renderSheet(); },
   rr: () => { S.sheet = null; reroute('組み直し', { manual:false }); },
   first: d => { S.sheet = null; reroute('先に行く', { firstId: d.id, fixed: curTrip().manual }); },
   drop: d => { S.sheet = null; dropStop(d.id); },
-  addrun: d => { S.sheet = null; renderSheet(); addToTrip(curTrip(), d.id); },
+  addrun: (d, el) => {
+    const p = byId(d.id); if (!addToTrip(curTrip(), d.id)) return;
+    S.added = (S.added || 0) + 1;
+    toast((p ? p.name : '') + ' を追加しました');
+    const row = el && el.closest && el.closest('.cand'), aq = $('#aq');
+    const done = () => { if (S.sheet === 'add' && aq && aq.isConnected) aq.oninput(); };
+    if (row && row.isConnected){ row.style.height = row.offsetHeight + 'px'; row.offsetHeight; row.classList.add('going'); setTimeout(done, 190); } else done();
+  },
   compass: () => { enableCompass(); updateDial(); },
   lmapMode: () => { S.lmapMode = S.lmapMode === 'all' ? 'exit' : 'all'; render(); },
   relWords: d => { S.cfg.relWords = d.on === '1'; save(); render(); },

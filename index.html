@@ -357,6 +357,35 @@ textarea:focus,.field:focus{border-color:var(--blue)}
 details{margin-top:16px}
 summary{font-size:14px;color:var(--ink2);padding:8px 4px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+.l-sign{justify-content:safe center}
+/* Safari のバーが出ていて高さが足りない時：名前と時刻を優先し、飾りを削る */
+@media (max-height:350px){
+  html.land{--tab:36px}
+  html.land main{padding-top:4px}
+  .lrun{gap:8px;height:calc(100dvh - var(--tab) - 8px - env(safe-area-inset-top) - env(safe-area-inset-bottom))}
+  .l-left{gap:5px}
+  .l-head{font-size:12px}.l-head b{font-size:17px}
+  .l-sign{padding:7px 12px;border-radius:14px;animation:none!important;box-shadow:none}
+  .l-sign .state{font-size:11px;padding:1px 8px 1px 6px;gap:5px}
+  .l-sign .state .live{width:7px;height:7px}
+  .l-sign .name{margin:2px 0 0;font-size:20px!important}
+  .l-sign .addr{display:none}
+  .l-figs{margin-top:1px;gap:14px}.l-figs b{font-size:20px}
+  .l-strip{min-height:26px;padding:3px 9px;font-size:12px}
+  .l-big{min-height:44px!important;font-size:17px}
+  .l-big .bt small{display:none}
+  .l-acts .btn{min-height:34px;font-size:12px}
+}
+@media (max-height:270px){
+  .l-sign{padding:4px 12px}
+  .l-sign .name{font-size:17px!important;margin:0}
+  .l-figs b{font-size:17px}
+  .l-strip{display:none}
+  .l-figs{margin-top:0}
+  .l-sign .state{display:none}
+  .l-big{min-height:40px!important}
+  .l-acts .btn{min-height:30px}
+}
 </style>
 </head>
 <body>
@@ -372,7 +401,7 @@ summary{font-size:14px;color:var(--ink2);padding:8px 4px}
    配達ルートアプリ
    データは端末（localStorage）に保存し、スプレッドシートとは Apps Script 経由で裏で同期する
    ========================================================= */
-const VERSION = 'v26';
+const VERSION = 'v27';
 const AUTO_DONE_METERS = 250;       // アプリに戻った時、この距離以内なら自動で完了
 const MAX_WP = 25;                  // Routes API で1回に扱える経由地の上限
 const TAG_LIST = ['裏口','右側','左側','駐車しにくい','駐車場あり','昼休みあり','受付に時間がかかる'];

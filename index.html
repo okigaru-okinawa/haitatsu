@@ -277,7 +277,7 @@ summary{font-size:14px;color:var(--ink2);padding:8px 4px}
    配達ルートアプリ
    データは端末（localStorage）に保存し、スプレッドシートとは Apps Script 経由で裏で同期する
    ========================================================= */
-const VERSION = 'v22';
+const VERSION = 'v23';
 const AUTO_DONE_METERS = 250;       // アプリに戻った時、この距離以内なら自動で完了
 const MAX_WP = 25;                  // Routes API で1回に扱える経由地の上限
 const TAG_LIST = ['裏口','右側','左側','駐車しにくい','駐車場あり','昼休みあり','受付に時間がかかる'];
@@ -1489,6 +1489,21 @@ document.addEventListener('input', ev => {
 document.addEventListener('touchmove', ev => { if (sorting && ev.cancelable) ev.preventDefault(); }, { passive:false });
 window.addEventListener('DOMContentLoaded', initSort);
 
+/* 営業所の初期値：会社の住所。まだ当てはめていなければ、住所から位置を調べて1回だけ設定する
+   （あとから設定画面で変えた場合は、そのまま尊重する） */
+const DEFAULT_DEPOT = { name: '沖縄東邦', addr: '沖縄県中頭郡西原町字翁長834番地' };
+async function applyDefaultDepot(){
+  if (!S.cfg.url || S.cfg.depotDefault) return;
+  try{
+    const j = await api({ a:'places', q: DEFAULT_DEPOT.addr });
+    const x = (j.places || []).find(q => q.lat > 26.18 && q.lat < 26.28 && q.lng > 127.72 && q.lng < 127.82);   // 西原町のあたりだけ採用
+    if (!x) return;
+    S.cfg.depot = { lat: x.lat, lng: x.lng, name: DEFAULT_DEPOT.name, addr: DEFAULT_DEPOT.addr }; S.cfg.depotDefault = true; save(); keepSetupInUrl();
+    ['am','pm'].forEach(k => { const t = S.day.trips[k]; if (t.status === 'ready'){ t.order = null; t.status = 'plan'; } });
+    save(); toast('営業所を 沖縄東邦（西原町翁長）に設定しました'); render();
+  }catch(e){}
+}
+
 /* ---------- 起動 ---------- */
 ensureToday();
 keepSetupInUrl();
@@ -1498,6 +1513,7 @@ render();
 fetch('yomi.json').then(r => r.json()).then(j => { YOMI = j; LS.set('yomi', j); NORM = new WeakMap(); }).catch(() => {});
 if (S.cfg.url && (!S.master.length || Date.now() - LS.get('masterAt', 0) > 6*3600*1000)) loadMaster(true);
 onReturn();
+applyDefaultDepot();
 </script>
 </body>
 </html>

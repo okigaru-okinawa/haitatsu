@@ -91,6 +91,22 @@ main{padding:10px 16px 0;max-width:560px;margin:0 auto}
 .chip.amber{background:var(--amber-soft);color:var(--amber)}
 .chip.green{background:var(--green-soft);color:var(--green)}
 .chip.red{background:var(--red);color:#fff}
+.chip.due{background:var(--blue);color:#fff}
+.always{display:flex;align-items:center;gap:10px;width:100%;margin-top:12px;padding:10px 12px;border:0;border-radius:12px;background:var(--paper);color:var(--ink);text-align:left;font-size:14px}
+.always i{width:24px;height:24px;border-radius:7px;flex:none;display:flex;align-items:center;justify-content:center;box-shadow:inset 0 0 0 2px var(--ink3);color:transparent;background:var(--card)}
+.always i .ic{width:15px;height:15px}
+.always.on i{background:var(--blue);box-shadow:none;color:#fff}
+.always b{display:block;font-weight:700}.always small{display:block;font-size:12px;color:var(--ink2);margin-top:1px}
+.duehint{margin:10px 2px 0;font-size:13px;color:var(--ink2)}
+.duebar{background:var(--card);border-radius:14px;margin:10px 0 0;overflow:hidden}
+.duebar>div{display:flex;align-items:center;gap:10px;padding:10px 14px}
+.duebar>div+div{border-top:1px solid var(--rule)}
+.duebar b{display:block;font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.duebar small{display:block;font-size:12px;color:var(--ink2)}
+.duebar .grow{min-width:0;flex:1}
+.duebar .t{font-size:17px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}.duebar .t small{display:inline;margin-left:2px}
+.duebar .late small{color:var(--red);font-weight:600}.duebar .late .t{color:var(--red)}
+.memo.duememo{background:var(--blue-soft);color:var(--blue)}
 .memo.closed{background:var(--red);color:#fff}
 .pick{display:flex;flex-wrap:wrap;gap:8px}
 .pick .tag{min-width:52px}
@@ -410,7 +426,7 @@ summary{font-size:14px;color:var(--ink2);padding:8px 4px}
    配達ルートアプリ
    データは端末（localStorage）に保存し、スプレッドシートとは Apps Script 経由で裏で同期する
    ========================================================= */
-const VERSION = 'v30';
+const VERSION = 'v31';
 const AUTO_DONE_METERS = 250;       // アプリに戻った時、この距離以内なら自動で完了
 const MAX_WP = 25;                  // Routes API で1回に扱える経由地の上限
 const TAG_LIST = ['裏口','右側','左側','駐車しにくい','駐車場あり','昼休みあり','受付に時間がかかる'];
@@ -722,6 +738,78 @@ function etas(t){
 }
 const legSum = legs => ({ sec: legs.reduce((a, l) => a + l.sec, 0), km: Math.round(legs.reduce((a, l) => a + l.m, 0) / 100) / 10 });
 const fmtDur = sec => { const m = Math.round(sec / 60); return m >= 60 ? `${Math.floor(m / 60)}時間${m % 60 ? (m % 60) + '分' : ''}` : m + '分'; };
+/* ---------- 「○時まで」に間に合う順番にする ----------
+   最短の順番のままで間に合うなら、何も動かさない。
+   間に合わない所だけを、間に合う位置の中でいちばん遠回りが少ない所へ前に出す。
+   lock = 先頭から動かしてはいけない件数（「最初に行く」や、もうナビで向かっている所） */
+const DUE_SAFE = 5 * 60000;
+function dueFit(t, origin, order, legs, lock, T0){
+  const P = id => { const p = byId(id); return p && p.lat ? pt(p) : null; };
+  const due = {}; order.forEach(id => { const a = dueAt(t, t.stops.find(s => s.id === id)); if (a) due[id] = a; });
+  if (!Object.keys(due).length) return null;
+  /* まだ走っていない区間の見積り：このルートの「直線1mあたり何秒」を使う */
+  let sm = 0, ss = 0;
+  order.forEach((id, i) => { const a = i ? P(order[i-1]) : origin, b = P(id), l = legs[i]; if (a && b && l){ sm += meters(a, b); ss += l.sec; } });
+  const k = sm > 500 ? Math.min(0.5, Math.max(0.06, ss / sm)) : 0.15;
+  const est = (a, b) => (a && b ? meters(a, b) * k + 60 : 600);
+  let seq = order.map((id, i) => ({ id, sec: legs[i] ? legs[i].sec : null }));
+  const legSec = (x, i, list) => x.sec != null ? x.sec : est(i ? P(list[i-1].id) : origin, P(x.id));
+  const stay = id => dwellOf(byId(id)) * 60000;
+  const moved = [], miss = [];
+  Object.keys(due).forEach(id => { if (due[id] <= T0) miss.push(id); });   // もう時刻を過ぎている指定は、順番を動かさない
+  for (let n = 0; n < 10; n++){
+    let tm = T0; const at = seq.map((x, i) => { tm += legSec(x, i, seq) * 1000; const a = tm; tm += stay(x.id); return a; });
+    const late = seq.map((x, i) => ({ x, i, d: due[x.id] })).filter(o => o.d && at[o.i] > o.d - DUE_SAFE && !miss.includes(o.x.id)).sort((a, b) => a.d - b.d)[0];
+    if (!late) break;
+    if (late.i <= lock){ miss.push(late.x.id); continue; }   // もうこれ以上前に出せない
+    const rest = seq.filter(x => x !== late.x), c = P(late.x.id);
+    let best = -1, bd = Infinity; tm = T0;
+    for (let j = lock; j < late.i; j++){
+      const a = j ? P(rest[j-1].id) : origin, b = rest[j] ? P(rest[j].id) : null;
+      if (tm + est(a, c) * 1000 <= late.d - DUE_SAFE){
+        const det = (a && c ? meters(a, c) : 0) + (b && c ? meters(c, b) : 0) - (a && b ? meters(a, b) : 0);
+        if (det < bd){ bd = det; best = j; }
+      }
+      tm += legSec(rest[j], j, rest) * 1000 + stay(rest[j].id);
+    }
+    if (best < 0){ best = lock; miss.push(late.x.id); }      // どこに入れても間に合わない → いちばん前へ
+    const after = seq[late.i + 1]; if (after) after.sec = null;
+    if (rest[best]) rest[best].sec = null;
+    late.x.sec = null; rest.splice(best, 0, late.x); seq = rest; moved.push(late.x.id);
+  }
+  const out = seq.map(x => x.id);
+  return { order: out, changed: out.join() !== order.join(), moved: [...new Set(moved)], miss };
+}
+/* 最短で出した結果 r に時間指定を当てはめ、動かした時は実際の道でもう一度確かめる */
+async function dueApply(t, origin, r, dest, lock){
+  let cur = r, moved = [], miss = [];
+  for (let round = 0; round < 4; round++){
+    const f = dueFit(t, origin, cur.order, cur.legs, lock || 0, Date.now());
+    if (!f) break;
+    miss = f.miss;
+    if (!f.changed || round === 3) break;
+    /* 前に出した所までは順番を固定し、その先は、そこからの最短をもう一度出す（行って戻る無駄を減らす） */
+    const last = Math.max(...f.moved.map(id => f.order.indexOf(id)));
+    try{ cur = await planRoute(origin, f.order.map((id, i) => ({ id, pin: i <= last })), dest, false); moved.push(...f.moved); }catch(e){ break; }
+  }
+  cur.moved = [...new Set(moved)].filter(id => cur.order.indexOf(id) < r.order.indexOf(id)); cur.miss = miss;
+  return cur;
+}
+const dueNames = ids => ids.map(id => (byId(id) || {}).name || '').filter(Boolean).join('、');
+/* 配達中：時間が押してきて「○時まで」に間に合わなくなりそうなら、裏で組み直す（同じ状況では1回だけ） */
+function dueWatch(t){
+  if (!t || t.status !== 'run' || !t.order) return;
+  const e = etas(t);
+  for (let i = t.idx + 1; i < t.order.length; i++){
+    const id = t.order[i], st = t.stops.find(s => s.id === id), at = dueAt(t, st);
+    if (!at || e.list[i] <= at - 120000) continue;
+    const sig = t.idx + ':' + id; if (t.dueSig === sig) return;
+    t.dueSig = sig; save();
+    if (t.manual) toast(((byId(id) || {}).name || '') + ' が ' + dueHour(t, st) + '時に間に合わなくなりそうです');
+    else rerouteSoon('時間指定', id);
+    return;
+  }
+}
 /* 出発前のルートを作る。ids を渡すとその順番のまま（手で並べた順）。
    最短を作る時は、3通りの回り方を実際の道路（今の混み具合）で計算して、走る時間がいちばん短いものを選ぶ */
 async function buildRoute(shift, ids){
@@ -758,7 +846,8 @@ async function buildRoute(shift, ids){
       tries.forEach((r, i) => { if (r && proof[i].usable && proof[i].sec < proof[bi].sec) bi = i; });
       best = tries[bi]; proof = proof.map((x, i) => x && Object.assign(x, { chosen: i === bi })).filter(Boolean);
     }
-    Object.assign(t, { order: best.order, legs: best.legs, legBase: 0, idx: 0, status: 'ready', navAt: null, manual: fixed, proof, km: legSum(best.legs).km });
+    if (!fixed) best = await dueApply(t, dep, best, dep, items.filter(s => s.pin).length);
+    Object.assign(t, { order: best.order, legs: best.legs, legBase: 0, idx: 0, status: 'ready', navAt: null, manual: fixed, proof, km: legSum(best.legs).km, dueMoved: best.moved || [], dueMiss: best.miss || [], dueSig: null });
     S.day.active = shift; S.view = 'go'; S.goTab = 'list'; S.sheet = null; save();
   }catch(e){ toast(e.message === 'Failed to fetch' ? '通信できませんでした。電波を確認してね' : e.message); }
   busy(false); render();
@@ -780,6 +869,11 @@ async function reroute(kind, opt){
     const origin = pos || (t.idx ? pt(byId(t.order[t.idx-1])) : S.cfg.depot);
     const r = await planRoute(origin, fallback.filter(id => id !== lastId).map(id => ({ id, pin: id === opt.firstId })), lastId ? pt(byId(lastId)) : S.cfg.depot, !!opt.fixed);
     let order = r.order, legs = r.legs;
+    if (!opt.fixed && !lastId){
+      const f = await dueApply(t, origin, r, S.cfg.depot, opt.firstId ? 1 : 0); order = f.order; legs = f.legs;
+      t.dueMoved = f.moved || []; t.dueMiss = f.miss || [];
+      if (f.moved && f.moved.length) setTimeout(() => toast(dueNames(f.moved) + ' を前に動かしました（時間指定）'), 50);
+    }
     if (lastId){ const b = await planRoute(pt(byId(lastId)), [], S.cfg.depot, true); order = order.concat(lastId); legs = legs.concat(b.legs); }
     fallback.forEach(id => { if (!order.includes(id)) order.push(id); });
     t.order = t.order.slice(0, t.idx).concat(order); t.legs = legs;
@@ -824,7 +918,7 @@ function startTrip(){
   const e = etas(t);
   t.predEnd = e.end;
   t.order.forEach((id, i) => { const st = t.stops.find(s => s.id === id); if (st){ st.plan = i + 1; st.eta0 = e.list[i]; } });
-  S.day.active = t.shift; S.showAll = false; save(); render(); window.scrollTo(0, 0);
+  S.day.active = t.shift; S.showAll = false; save(); render(); window.scrollTo(0, 0); dueWatch(t);
 }
 /* Googleマップへ渡す行き先。名前と住所で渡すと、マップ側にも名前が出る。
    駐車位置を登録してある所は、その場所へ正確に案内するために緯度・経度で渡す */
@@ -849,7 +943,7 @@ function complete(auto){
   t.pending = id; t.idx++; t.navAt = null; S.sheet = null; save();
   const p = byId(id);
   if (p){ p.visits = (p.visits||0) + 1; p.last = S.day.date; saveMaster(); }
-  render(); toHero();
+  render(); toHero(); dueWatch(t);
 }
 /* まちがえて完了になった時に、ひとつ戻す（次へ出発する前だけ） */
 function undoDone(){
@@ -866,7 +960,7 @@ function settle(t, departAt){
   const d = Math.round(((departAt || st.doneAt) - st.arrAt) / 60000);
   st.dwell = (d >= 1 && d <= 90) ? d : null;
   const p = byId(st.id);
-  enqueue({ a:'log', sheet:'配達記録', row:[t.id, S.day.date, st.id, p ? p.name : '', st.plan || '', st.seq, st.eta0 ? hm(st.eta0) : '', hm(st.doneAt), st.dwell === null ? '' : st.dwell, (st.auto ? '完了(自動)' : '完了') + (st.added ? '・追加' : ''), st.pin ? '優先' : ''] });
+  enqueue({ a:'log', sheet:'配達記録', row:[t.id, S.day.date, st.id, p ? p.name : '', st.plan || '', st.seq, st.eta0 ? hm(st.eta0) : '', hm(st.doneAt), st.dwell === null ? '' : st.dwell, (st.auto ? '完了(自動)' : '完了') + (st.added ? '・追加' : ''), [st.pin ? '優先' : '', dueHour(t, st) ? dueHour(t, st) + '時まで' : ''].filter(Boolean).join('・')] });
   enqueue({ a:'visit', id: st.id, dwell: st.dwell, date: S.day.date });
   save();
 }
@@ -919,7 +1013,7 @@ function commitWent(t){
   const st = t.stops.find(s => s.id === t.wentPend); t.wentPend = null;
   if (!st || st.state !== 'done') return;
   const p = byId(st.id);
-  enqueue({ a:'log', sheet:'配達記録', row:[t.id, S.day.date, st.id, p ? p.name : '', st.plan || '', st.seq, st.eta0 ? hm(st.eta0) : '', hm(st.doneAt), '', '完了(ついでに)' + (st.added ? '・追加' : ''), st.pin ? '優先' : ''] });
+  enqueue({ a:'log', sheet:'配達記録', row:[t.id, S.day.date, st.id, p ? p.name : '', st.plan || '', st.seq, st.eta0 ? hm(st.eta0) : '', hm(st.doneAt), '', '完了(ついでに)' + (st.added ? '・追加' : ''), [st.pin ? '優先' : '', dueHour(t, st) ? dueHour(t, st) + '時まで' : ''].filter(Boolean).join('・')] });
   enqueue({ a:'visit', id: st.id, dwell: null, date: S.day.date });
   save();
 }
@@ -963,7 +1057,8 @@ async function bgReroute(kind, target, seq){
     const pos = await here().catch(() => null);
     const origin = pos || (t.idx ? pt(byId(t.order[t.idx-1])) : S.cfg.depot);
     const head = t.navAt ? ids[0] : null;   // もうナビで向かっている所は、行き先を変えない
-    const r = await planRoute(origin, ids.map(id => ({ id, pin: id === head })), S.cfg.depot, !!t.manual);
+    let r = await planRoute(origin, ids.map(id => ({ id, pin: id === head })), S.cfg.depot, !!t.manual);
+    if (!t.manual) r = await dueApply(t, origin, r, S.cfg.depot, head ? 1 : 0);
     if (seq !== reSeq) return;
     if (!same()){ rerouteSoon(kind, target); return; }
     const order = r.order.slice(); ids.forEach(id => { if (!order.includes(id)) order.push(id); });
@@ -974,7 +1069,9 @@ async function bgReroute(kind, target, seq){
     if (S.sheet === 'add') S.added = (S.added || 0) + 1;   // 追加の途中は入力を消さない。閉じた時に描き直す
     else if (S.view === 'reg'){ if (!$('#q') || document.activeElement !== $('#q')) refreshReg(); }
     else if (!sorting && !(sw && sw.on) && !document.querySelector('.srow.open')) render();
-    if (moved) toast('残りの順番を組み直しました');
+    if (!t.manual){ t.dueMoved = r.moved || []; t.dueMiss = r.miss || []; save(); }
+    if (r.moved && r.moved.length) toast(dueNames(r.moved) + ' を前に動かしました（時間指定）');
+    else if (moved) toast('残りの順番を組み直しました');
   }catch(e){ /* 通信できない時は、今の順番のまま進める */ }
 }
 /* 便を終える：記録を送り、履歴に移して、同じ枠で次の便を登録できるようにする */
@@ -1236,7 +1333,26 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const shortAddr = a => String(a||'').replace(/^沖縄県/,'').replace(/^(島尻郡|中頭郡|国頭郡)/,'');
 const tagsOf = p => String(p.tags||'').split(/[,、]/).filter(Boolean);
 const DWELL_CHOICES = [3, 5, 8, 10, 15], DAYS = ['月','火','水','木','金','土'];
-const plainTags = p => tagsOf(p).filter(x => !/^納品\d+分$/.test(x) && !/^午後休:/.test(x));
+const plainTags = p => tagsOf(p).filter(x => !/^納品\d+分$/.test(x) && !/^午後休:/.test(x) && !/^\d{1,2}時まで$/.test(x));
+/* 「○時まで」に届ける：今日だけの指定は便の中（st.by）、「いつも」はメモのタグ（○時まで）に持つ */
+const DUE_H = { am:[10,11,12], pm:[15,16,17] };
+const dueTag = p => { const m = tagsOf(p).map(x => x.match(/^(\d{1,2})時まで$/)).find(Boolean); return m ? Number(m[1]) : null; };
+function dueHour(t, st){
+  if (!t || !st) return null;
+  if (st.by != null) return st.by || null;            // 0 = いつもの指定を今日だけ外した
+  const p = byId(st.id), h = p && dueTag(p);
+  return h && DUE_H[t.shift].includes(h) ? h : null;   // 午前の指定は午前の便だけ、午後の指定は午後の便だけに効く
+}
+const dueAt = (t, st) => { const h = dueHour(t, st); if (!h) return null; const d = new Date(); d.setHours(h, 0, 0, 0); return d.getTime(); };
+const dueChip = (t, st, eta) => { const h = dueHour(t, st); if (!h) return ''; const late = eta && eta > dueAt(t, st); return ` <span class="chip ${late ? 'red' : 'due'}">${h}時まで${late ? '・遅れそう' : ''}</span>`; };
+/* 時間指定を変えた後：配達中は裏で組み直す。出発前は、画面を閉じた時にルートを作り直す */
+function dueChanged(tr, id){
+  tr.dueSig = null;
+  if (tr.status === 'run'){ if (!tr.manual) rerouteSoon('時間指定', id); }
+  else if (tr.status === 'ready' && S.view === 'reg'){ tr.order = null; tr.status = 'plan'; }   // 登録の画面では作り直さない（「ルートを作る」を押した時に反映）
+  else if (tr.status === 'ready' && !tr.manual) S.dueDirty = tr.shift;
+}
+function setDueTag(p, h){ const rest = tagsOf(p).filter(x => !/^\d{1,2}時まで$/.test(x)); setTags(p, h ? rest.concat(h + '時まで') : rest); }
 const dwellTag = p => { const m = tagsOf(p).map(x => x.match(/^納品(\d+)分$/)).find(Boolean); return m ? Number(m[1]) : null; };
 const closedDays = p => tagsOf(p).filter(x => /^午後休:/.test(x)).map(x => x.slice(4));
 /* 納品にかかる時間（分）：自分で決めた値 → これまでの実測の平均 → 設定の基本値 */
@@ -1265,6 +1381,13 @@ function toast(m, act){
 function busy(m){ $('#overlay').innerHTML = m ? `<div class="loading">${esc(m)}</div>` : ''; }
 function setBar(html){ const b = $('#bar'); b.innerHTML = html ? `<div>${html}</div>` : ''; b.hidden = !html; }
 function title(h, aside){ return (S.cfg.test ? `<div class="testbar">テストモード：記録やメモは保存されません</div>` : '') + `<div class="title"><h1>${h}</h1>${aside ? `<div class="aside">${aside}</div>` : ''}</div>`; }
+/* 出発前の画面：時間指定のある所が間に合うかを1行ずつ見せる */
+function dueBar(t, e){
+  const rows = t.order.map((id, i) => ({ id, i, st: t.stops.find(s => s.id === id) })).filter(o => o.i >= t.idx && dueHour(t, o.st));
+  if (!rows.length) return '';
+  return `<div class="duebar">${rows.map(o => { const at = dueAt(t, o.st), eta = e.list[o.i], late = eta > at, mv = (t.dueMoved || []).includes(o.id);
+    return `<div class="${late ? 'late' : ''}"><span class="chip ${late ? 'red' : 'due'}">${dueHour(t, o.st)}時まで</span><span class="grow"><b>${esc((byId(o.id) || {}).name || '')}</b><small>${late ? (t.manual ? '今の順番だと間に合いません' : 'いちばん前にしても間に合いません') : mv ? '間に合うように、前に動かしました' : 'このままで間に合います'}</small></span><span class="t">${hm(eta)}<small>着</small></span></div>`; }).join('')}</div>`;
+}
 function memoHtml(p, shift){
   const tg = plainTags(p), cd = closedDays(p), dw = dwellTag(p);
   const warn = closedToday(p, shift) ? `<div class="memo closed">今日は午後休診の日です。受け取れるか確認を</div>` : '';
@@ -1318,7 +1441,7 @@ function refreshReg(){
       <div class="label"><span>${shiftName(S.shift)}の配達先</span><span>${stops.length}件</span></div>
       <div class="card noline" data-sort="${running ? '' : 'reg'}">${stops.map((s, i) => { const p = byId(s.id) || { name:s.id, addr:'' }; const done = s.state === 'done';
         return stopRow({ id:s.id, num: done ? IC.check : i + 1, cls: done ? 'done' : '', name:p.name, addr:shortAddr(p.addr), tap:'reg',
-          extra: (done ? ' <span class="chip green">完了</span>' : s.pin ? ' <span class="chip amber">最初に行く</span>' : '') + (tagsOf(p).length || p.note ? ' <span class="chip amber">メモ</span>' : ''),
+          extra: (done ? ' <span class="chip green">完了</span>' : s.pin ? ' <span class="chip amber">最初に行く</span>' : '') + (done ? '' : dueChip(t, s)) + (plainTags(p).length || p.note ? ' <span class="chip amber">メモ</span>' : ''),
           del: done ? null : running ? { a:'delRegRun', label:'外す' } : { a:'delReg', label:'削除' }, drag: !running }); }).join('')}</div>
       ${running ? '<p class="hint">この便は配達中です。追加するとルートに入り、左にスワイプすると外せます。</p>'
                 : '<p class="hint">タップでメモや操作、左にスワイプで削除、長押しして動かすと並べ替え。</p>'}`
@@ -1361,7 +1484,7 @@ function vGo(){
   const e = etas(t), total = t.order.length, tab = S.goTab === 'map' ? 'map' : 'list';
   const rowOf = (i, o) => { const id = t.order[i], p = byId(id) || { name:id, addr:'' };
     return stopRow(Object.assign({ id, num: i + 1, name: p.name, addr: shortAddr(p.addr), side: hm(e.list[i]),
-      extra: ((t.stops.find(x => x.id === id) || {}).closedAt ? ` <span class="chip red">${hm(t.stops.find(x => x.id === id).closedAt)} 閉まっていた</span>` : closedToday(p, t.shift) ? ' <span class="chip red">午後休診</span>' : '') + (tagsOf(p).length || p.note ? ' <span class="chip amber">メモ</span>' : '') }, o)); };
+      extra: ((t.stops.find(x => x.id === id) || {}).closedAt ? ` <span class="chip red">${hm(t.stops.find(x => x.id === id).closedAt)} 閉まっていた</span>` : closedToday(p, t.shift) ? ' <span class="chip red">午後休診</span>' : '') + dueChip(t, t.stops.find(x => x.id === id), e.list[i]) + (plainTags(p).length || p.note ? ' <span class="chip amber">メモ</span>' : '') }, o)); };
   const depRow = (label, time, cls) => stopRow({ num: label, cls: 'term ' + cls, name: (S.cfg.depot && S.cfg.depot.name) || '営業所', side: time });
   const pick = (a, b) => `<div class="seg"><button data-a="goTab" data-t="list" class="${tab==='list'?'on':''}">${a}</button><button data-a="goTab" data-t="map" class="${tab==='map'?'on':''}">${b}</button></div>`;
 
@@ -1374,7 +1497,8 @@ function vGo(){
         <div class="fig"><small>件数</small><b>${total}<span>件</span></b></div>
         <div class="fig"><small>道のり</small><b>${t.km ?? '-'}<span>km</span></b></div>
       </div>
-      ${pf ? `<button class="why" data-a="sheet" data-s="proof">${IC.check}<span class="grow">${gain > 0 ? `登録した順より <b>${gain}分</b> 早い回り方です` : '比べた中で、いちばん早い回り方です'}</span><span class="lk">根拠</span>${IC.chev}</button>` : ''}
+      ${dueBar(t, e)}
+      ${pf ? `<button class="why" data-a="sheet" data-s="proof">${IC.check}<span class="grow">${(t.dueMoved || []).length ? 'いちばん早い回り方を、時間指定に合わせました' : gain > 0 ? `登録した順より <b>${gain}分</b> 早い回り方です` : '比べた中で、いちばん早い回り方です'}</span><span class="lk">根拠</span>${IC.chev}</button>` : ''}
       ${pick('順番', '地図')}
       ${tab === 'map' ? `<div class="col2"><div id="map" class="tall"></div></div>` : `<div class="col2"><div class="card">
         ${depRow('発', '', 'first')}
@@ -1427,6 +1551,7 @@ function vGo(){
     </div>
     ${t.breakAt ? `<div class="memo" style="display:flex;align-items:center;gap:10px"><span class="grow">休憩中（${hm(t.breakAt)}から）</span><button class="mini" data-a="breakEnd">休憩を終える</button></div>` : ''}
     ${closedOffer(p, t.stops.find(x => x.id === id))}
+    ${(() => { const st = t.stops.find(x => x.id === id), h = dueHour(t, st); if (!h) return ''; const late = e.list[t.idx] > dueAt(t, st); return `<div class="memo ${late ? 'closed' : 'duememo'}"><b>${h}時までに届ける</b>${late ? '　今のままだと遅れそうです' : ''}</div>`; })()}
     ${memoHtml(p, t.shift)}
     ${going ? '' : exitHtml(t)}
     <div style="height:14px"></div>
@@ -1452,7 +1577,7 @@ function vGoLand(t, e){
   if (t.breakAt) strip = `<div class="l-strip"><span class="grow one">休憩中（${hm(t.breakAt)}から）</span><button class="mini" data-a="breakEnd">休憩を終える</button></div>`;
   else if (p){
     const shut = st && st.closedAt, today = closedToday(p, t.shift);
-    const bits = [shut ? `さっき ${hm(st.closedAt)} は閉まっていた` : '', today ? '今日は午後休診' : '', ...plainTags(p), dwellTag(p) ? `納品 約${dwellTag(p)}分` : '', p.note || ''].filter(Boolean);
+    const bits = [dueHour(t, st) ? dueHour(t, st) + '時まで' : '', shut ? `さっき ${hm(st.closedAt)} は閉まっていた` : '', today ? '今日は午後休診' : '', ...plainTags(p), dwellTag(p) ? `納品 約${dwellTag(p)}分` : '', p.note || ''].filter(Boolean);
     if (bits.length) strip = `<div class="l-strip ${shut || today ? 'red' : ''}" data-a="stop" data-id="${id}" data-ctx="cur"><span class="grow one">${esc(bits.join('・'))}</span>${IC.chev}</div>`;
   }
   const nm = p ? p.name : (dep.name || '営業所') + 'へ戻る';
@@ -1597,6 +1722,12 @@ function renderSheet(){
         <div class="tags">${TAG_LIST.map(x => `<button class="tag ${tg.includes(x)?'on':''}" data-a="tag" data-tag="${esc(x)}" data-id="${id}">${esc(x)}</button>`).join('')}</div>
         <textarea data-note="${id}" placeholder="例：駐車場は建物の裏。受付は2階。検品あり">${esc(p.note||'')}</textarea>
       </div>
+      ${(() => { if (ctx === 'rev' || !st.id || st.state === 'done' || st.state === 'drop') return '';
+        const cur = dueHour(tr, st), th = dueTag(p), hs = DUE_H[tr.shift] || DUE_H.am;
+        return `<div class="label"><span>何時までに届ける</span><span>間に合う順番に、自動で並べます</span></div>
+      <div class="card pad"><div class="pick">${hs.map(h => `<button class="tag ${cur === h ? 'on' : ''}" data-a="due" data-h="${h}" data-id="${id}">${h}時まで</button>`).join('')}</div>
+        ${cur ? `<button class="always ${th === cur ? 'on' : ''}" data-a="dueAlways" data-id="${id}" aria-pressed="${th === cur}"><i>${IC.check}</i><span><b>この店は、いつも${cur}時まで</b><small>${th === cur ? '次からも自動でつきます' : '今は今日だけ。押すと次からも自動でつきます'}</small></span></button>`
+              : th && st.by === 0 ? `<p class="duehint">いつもは${th}時まで。今日だけ外しています</p>` : ''}</div>`; })()}
       <div class="label"><span>納品にかかる時間（着いてから車に戻るまで）</span><span>${st.dwell != null && ctx === 'rev' ? '今回は約' + st.dwell + '分　' : ''}${dwellTag(p) ? '' : (p.avg && (p.visits||0) >= 2 ? 'これまでの平均 約' + Math.round(p.avg) + '分' : '基本 ' + (S.cfg.dwell || 3) + '分')}</span></div>
       <div class="card pad"><div class="pick">${DWELL_CHOICES.map(n => `<button class="tag ${dwellTag(p) === n ? 'on' : ''}" data-a="dwellSet" data-n="${n}" data-id="${id}">${n}分</button>`).join('')}</div></div>
       <div class="label"><span>午後が休診の曜日</span><span>その日の午後に行く時、赤く知らせます</span></div>
@@ -1632,12 +1763,13 @@ function renderSheet(){
     o.innerHTML = wrap(`<h2>このあと ${ids.length}件</h2><div class="sub">タップでメモ、長押しで入れ替え、左にスワイプで「行った」「行かない」</div>
       <div class="card"><div data-sort="run">${ids.map((rid, k) => { const rp = byId(rid) || { name:rid, addr:'' }, rs = t.stops.find(z => z.id === rid) || {};
         return stopRow({ id:rid, num: t.idx + 2 + k, cls: k === 0 ? 'first' : '', name: rp.name, addr: shortAddr(rp.addr), side: hm(e2.list[t.idx + 1 + k]), del:{ a:'delRun', label:'行かない', went:true }, drag:true, tap:'run',
-          extra: (rs.closedAt ? ' <span class="chip red">閉まっていた</span>' : closedToday(rp, t.shift) ? ' <span class="chip red">午後休診</span>' : '') + (tagsOf(rp).length || rp.note ? ' <span class="chip amber">メモ</span>' : '') }); }).join('')}</div>
+          extra: (rs.closedAt ? ' <span class="chip red">閉まっていた</span>' : closedToday(rp, t.shift) ? ' <span class="chip red">午後休診</span>' : '') + dueChip(t, rs) + (plainTags(rp).length || rp.note ? ' <span class="chip amber">メモ</span>' : '') }); }).join('')}</div>
         ${stopRow({ num:'着', cls:'term last', name:(S.cfg.depot && S.cfg.depot.name) || '営業所', side: hm(e2.end) })}</div><div style="height:8px"></div>`);
   } else if (S.sheet === 'proof'){
     const pf = t.proof || [];
     o.innerHTML = wrap(`<h2>この順番にした根拠</h2><div class="sub">今の道路の混み具合で、回り方を${pf.length}通り計算しました。走る時間がいちばん短いものを選んでいます。</div>
       <div class="card">${pf.map(x => `<div class="set"><div class="grow"><div class="k">${x.chosen ? '✓ ' : ''}${esc(x.label)}</div><div class="v">${x.km}km${x.usable ? '' : '　「最初に行く」の指定を守れないので対象外'}</div></div><b class="n" style="font-size:22px;color:${x.chosen ? 'var(--blue)' : 'var(--ink2)'}">${fmtDur(x.sec)}</b></div>`).join('')}</div>
+      ${(t.dueMoved || []).length ? `<div class="memo">${esc(dueNames(t.dueMoved))} は「○時まで」の指定があるので、いちばん早い順番から、間に合う位置まで前に動かしています。</div>` : ''}
       <p class="hint">時間は走っている時間だけの合計です（薬局での時間は別）。高速・有料道路は使わない条件です。道路の状況は変わるので、途中で遅れたら「その他」→「今いる場所から最短に組み直す」で計算し直せます。</p>
       <p class="hint">自分の順番で行きたい時は、一覧を長押しで入れ替えると、その順番の時間が出ます。</p><div style="height:8px"></div>`);
   } else if (S.sheet === 'first'){
@@ -1852,7 +1984,9 @@ const ACT = {
   doneNav: () => { complete(false); const t = curTrip(), np = byId(t.order[t.idx]); navTo(np ? destText(np) : S.cfg.depot.lat + ',' + S.cfg.depot.lng); },
   undoDone: () => undoDone(),
   sheet: d => { if (d.s === 'new') S.newName = d.tok || ''; S.sheet = d.s; renderSheet(); initSort(); },
-  close: () => { const was = S.sheet; S.sheet = null; if (was === 'stop' || (was === 'add' && S.added)){ S.added = 0; render(); } else renderSheet(); },
+  close: () => { const was = S.sheet; S.sheet = null;
+    if (was === 'stop' && S.dueDirty){ const sh = S.dueDirty; S.dueDirty = null; renderSheet(); if (S.day.trips[sh].status === 'ready'){ buildRoute(sh); return; } }
+    if (was === 'stop' || (was === 'add' && S.added)){ S.added = 0; render(); } else renderSheet(); },
   rr: () => { S.sheet = null; reroute('組み直し', { manual:false }); },
   first: d => { S.sheet = null; reroute('先に行く', { firstId: d.id, fixed: curTrip().manual }); },
   drop: d => { S.sheet = null; dropStop(d.id); },
@@ -1880,6 +2014,20 @@ const ACT = {
     const p = byId(d.id); if (!p) return;
     const tg = tagsOf(p);
     setTags(p, tg.includes(d.tag) ? tg.filter(x => x !== d.tag) : tg.concat(d.tag)); el.classList.toggle('on');
+  },
+  due: d => {
+    const tr = S.stopCtx === 'reg' ? S.day.trips[S.shift] : curTrip(), st = tr && tr.stops.find(x => x.id === d.id), p = byId(d.id); if (!st || !p) return;
+    const h = Number(d.h), th = dueTag(p);
+    if (dueHour(tr, st) === h) st.by = th ? 0 : null;          // もう一度押すと外れる（「いつも」の店は今日だけ外す）
+    else { st.by = h; if (th && th !== h) setDueTag(p, h); }
+    save(); dueChanged(tr, d.id); renderSheet();
+  },
+  dueAlways: d => {
+    const tr = S.stopCtx === 'reg' ? S.day.trips[S.shift] : curTrip(), st = tr && tr.stops.find(x => x.id === d.id), p = byId(d.id); if (!st || !p) return;
+    const h = dueHour(tr, st); if (!h) return;
+    if (dueTag(p) === h){ setDueTag(p, null); st.by = h; toast('今日だけの指定にしました'); }
+    else { setDueTag(p, h); st.by = h; toast('次からも ' + h + '時まで がつきます'); }
+    save(); renderSheet();
   },
   dwellSet: d => {
     const p = byId(d.id); if (!p) return;

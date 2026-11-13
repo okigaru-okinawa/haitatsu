@@ -162,7 +162,15 @@ main{padding:10px 16px 0;max-width:560px;margin:0 auto}
 .sign .fig b{font:700 30px/1.15 var(--num)}
 .sign .fig b span{font:600 14px/1 -apple-system,"Hiragino Sans",sans-serif;margin-left:2px}
 .sign{border:1px solid rgba(255,255,255,.22);background:linear-gradient(165deg,color-mix(in srgb,var(--blue) 86%,#fff) 0%,var(--blue) 46%,var(--blue-deep) 100%)}
-.sign.now{animation:glowBlue 2.4s ease-in-out infinite}
+.sign.now{box-shadow:0 0 0 2px rgba(0,122,255,.22),0 0 18px 2px rgba(0,122,255,.28)}
+/* 「ここを押す」：ボタンのふちを光がぐるっと回る（まだナビを押していない間だけ） */
+.spin{position:relative;isolation:isolate;overflow:hidden;border-color:transparent!important;background:rgba(255,255,255,.38)!important}
+.spin::before{content:"";position:absolute;left:50%;top:50%;width:240%;aspect-ratio:1;margin:-120% 0 0 -120%;z-index:-2;
+  background:conic-gradient(from 0deg,transparent 0 58%,rgba(255,214,10,.0) 60%,#FFD60A 80%,#fff 92%,transparent 100%);animation:spin 1.9s linear infinite}
+.spin::after{content:"";position:absolute;inset:3px;border-radius:9px;background:var(--spin-bg,#fff);z-index:-1}
+.btn.spin::after{border-radius:11px}
+.l-big.spin{--spin-bg:var(--blue);background:color-mix(in srgb,var(--blue) 60%,#fff)!important}
+@keyframes spin{to{transform:rotate(360deg)}}
 .sign.going{background:linear-gradient(165deg,color-mix(in srgb,var(--green) 84%,#fff) 0%,var(--green) 46%,#1B6B30 100%);animation:glowGreen 2.4s ease-in-out infinite}
 @keyframes glowBlue{0%,100%{box-shadow:0 0 0 2px rgba(0,122,255,.30),0 0 16px 2px rgba(0,122,255,.30)}50%{box-shadow:0 0 0 5px rgba(0,122,255,.16),0 0 34px 8px rgba(0,122,255,.55)}}
 @keyframes glowGreen{0%,100%{box-shadow:0 0 0 2px rgba(36,138,61,.30),0 0 16px 2px rgba(36,138,61,.30)}50%{box-shadow:0 0 0 5px rgba(36,138,61,.16),0 0 34px 8px rgba(36,138,61,.55)}}
@@ -184,7 +192,7 @@ main{padding:10px 16px 0;max-width:560px;margin:0 auto}
 .mini-row .undo{border:0;background:var(--green-soft);color:var(--green);font-weight:700;font-size:13px;border-radius:8px;padding:7px 10px;flex:none}
 .done-card{margin-bottom:0}
 .link-rail{width:4px;height:12px;background:var(--green);margin-left:26px}
-@media (prefers-reduced-motion:reduce){.sign.now,.sign.going,.live{animation:none}}
+@media (prefers-reduced-motion:reduce){.sign.now,.sign.going,.live,.spin::before{animation:none}}
 .exit{margin-top:10px;padding:14px 14px 12px}
 .exit-h{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--ink2);margin-bottom:10px}
 .exit-h b{font-size:15px;color:var(--ink)}
@@ -332,6 +340,10 @@ html.land main.two .sign.compact{gap:14px;padding:10px 14px}
 .btn:active{transform:scale(.98);filter:brightness(.96)}
 .more{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:8px;margin-top:8px}
 .more .btn{font-size:15px;font-weight:600;min-height:46px;padding:10px 4px;border:1px solid var(--rule)}
+.endrow{grid-auto-flow:row!important;grid-template-columns:minmax(0,1.75fr) minmax(0,1fr)!important}
+.endrow .btn{white-space:nowrap}
+.endrow .btn:first-child{color:var(--blue);border-color:var(--blue)}
+@media (max-width:350px){.endrow .btn{font-size:13.5px}}
 .tabbar{position:fixed;left:0;right:0;bottom:0;z-index:7;height:calc(var(--tab) + env(safe-area-inset-bottom));padding-bottom:env(safe-area-inset-bottom);background:var(--bar);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);border-top:.5px solid var(--rule);display:grid;grid-template-columns:repeat(4,1fr)}
 .tabbar button{border:0;background:transparent;color:var(--ink3);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:11px;font-weight:600}
 .tabbar button.on{color:var(--blue)}
@@ -341,19 +353,20 @@ html.land main.two .sign.compact{gap:14px;padding:10px 14px}
 .sheet-bg{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:20;display:flex;align-items:flex-end}
 .sheet{background:var(--paper);width:100%;max-width:560px;margin:0 auto;border-radius:22px 22px 0 0;padding:0 16px calc(16px + env(safe-area-inset-bottom));max-height:88vh;overflow:auto}
 .sheet{transition:transform .22s ease}
-.sheet-top{position:sticky;top:0;z-index:3;display:flex;align-items:flex-start;justify-content:center;height:56px;margin:0 -16px;padding:0 12px;background:var(--paper);border-radius:22px 22px 0 0;touch-action:none}
+.sheet-top{position:sticky;top:0;z-index:3;display:flex;align-items:flex-start;justify-content:center;height:44px;margin:0 -16px;padding:0 12px;background:var(--paper);border-radius:22px 22px 0 0;touch-action:none}
 .sheet-top .grab{width:44px;height:5px;border-radius:3px;background:var(--ink3);opacity:.5;margin-top:9px}
 .sheet h2,.sheet .sub{touch-action:none}
 .sheet-x{position:absolute;right:10px;top:10px;width:38px;height:38px;border-radius:50%;border:0;background:var(--rule);color:var(--ink2);display:flex;align-items:center;justify-content:center}
 .sheet-x svg{width:17px;height:17px;stroke-width:2.8}
 .sheet-x::after{content:"";position:absolute;inset:-8px}
 .sheet-x:active{transform:scale(.92)}
-.sheet h2{font-size:20px;font-weight:800;margin:-14px 50px 12px 2px;position:relative;z-index:4}
+.sheet h2{font-size:20px;font-weight:800;margin:-2px 50px 12px 2px;position:relative}
 .sheet .sub{font-size:14px;color:var(--ink2);margin:-8px 2px 12px}
 .ask{text-align:center;padding:16px 16px 14px;font-size:14px;color:var(--ink2);border-bottom:.5px solid var(--rule)}
 .ask b{display:block;font-size:16px;color:var(--ink);margin-bottom:2px}
 .as-btn{display:block;width:100%;border:0;background:var(--card);font-size:19px;padding:16px;color:var(--blue)}
 .as-btn.danger{color:var(--red)}
+.as-btn.plain{font-weight:700}
 .as-btn.cancel{font-weight:700;border-radius:12px;margin-top:8px}
 .opt{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:var(--card);border:0;padding:14px 16px;border-top:1px solid var(--rule)}
 .opt:first-child{border-top:0}
@@ -434,7 +447,7 @@ summary{font-size:14px;color:var(--ink2);padding:8px 4px}
    配達ルートアプリ
    データは端末（localStorage）に保存し、スプレッドシートとは Apps Script 経由で裏で同期する
    ========================================================= */
-const VERSION = 'v32';
+const VERSION = 'v33';
 const AUTO_DONE_METERS = 250;       // アプリに戻った時、この距離以内なら自動で完了
 const MAX_WP = 25;                  // Routes API で1回に扱える経由地の上限
 const TAG_LIST = ['裏口','右側','左側','駐車しにくい','駐車場あり','昼休みあり','受付に時間がかかる'];
@@ -940,6 +953,7 @@ function addToTrip(t, id){
   save();
   if (t.status === 'run'){
     /* 配達中：まず順番に入れて画面はすぐ返し、道の計算は裏でまとめて1回だけ */
+    t.askedEnd = false;
     const rest = t.order.slice(t.idx);
     const next = t.manual ? insertBest(rest, id, null, S.cfg.depot) : rest.concat(id);
     const k = t.idx + next.indexOf(id) - (t.legBase || 0);
@@ -1145,11 +1159,16 @@ async function onReturn(){
   try{
     const changed = ensureToday(); flush();
     const t = S.day.active && S.day.trips[S.day.active];
-    if (t && t.status === 'run' && t.navAt){
+    const id = t && t.status === 'run' ? t.order[t.idx] : null;
+    if (t && t.status === 'run' && (t.navAt || (!id && !t.askedEnd))){
       const pos = await here().catch(() => null);
-      const id = t.order[t.idx], p = id && byId(id);
-      if (pos && p && meters(pos, pt(p)) <= AUTO_DONE_METERS){ complete(true); return; }
-      if (pos && !id && S.cfg.depot && meters(pos, S.cfg.depot) <= AUTO_DONE_METERS){ finishTrip(); return; }
+      const p = id && byId(id);
+      if (pos && p && t.navAt && meters(pos, pt(p)) <= AUTO_DONE_METERS){ complete(true); return; }
+      /* 全部まわって営業所の近くに戻ったら、1回だけ「終了しますか？」とたずねる */
+      const lastDone = Math.max(0, ...t.stops.map(x => x.doneAt || 0));
+      if (pos && !id && !t.askedEnd && !S.sheet && S.cfg.depot && meters(pos, S.cfg.depot) <= AUTO_DONE_METERS && (t.navAt || Date.now() - lastDone > 5 * 60000)){
+        t.askedEnd = true; save(); S.view = 'go'; render(); askEnd(t); return;
+      }
     }
     if (changed || (S.view === 'go' && !S.sheet && !sorting)) render();
   } finally { returning = false; }
@@ -1579,7 +1598,7 @@ function vGo(){
     $('#main').innerHTML = head + `
       <div class="sign"><div class="eyebrow"><span>全部まわりました</span></div><div class="name">営業所へ戻る</div>
         <div class="figs"><div class="fig"><small>ここから</small><b>${mins(e.backSec)}<span>分</span></b></div><div class="fig"><small>着く予定</small><b>${hm(e.end)}</b></div></div></div>${t.navAt ? '' : exitHtml(t)}`;
-    setBar(`<button class="btn primary" data-a="navDepot">${IC.nav}<span class="bt"><b>ナビ開始</b><small>営業所へ・約${mins(e.backSec)}分</small></span></button><div class="more"><button class="btn" data-a="finish">便を終える</button><button class="btn" data-a="sheet" data-s="add">配達先を追加</button></div>`);
+    setBar(`<button class="btn primary" data-a="navDepot">${IC.nav}<span class="bt"><b>ナビ開始</b><small>営業所へ・約${mins(e.backSec)}分</small></span></button><div class="more endrow"><button class="btn" data-a="finish">${shiftName(t.shift)}の業務を終了する</button><button class="btn" data-a="sheet" data-s="add">配達先を追加</button></div>`);
     return;
   }
   const p = byId(id) || { name:id, addr:'' }, leg = curLeg(t, t.idx), going = !!t.navAt;
@@ -1591,7 +1610,7 @@ function vGo(){
       <div class="addr">${esc(shortAddr(p.addr))}</div>
       <div class="figs"><div class="fig"><small>ここから</small><b>${leg ? mins(leg.sec) : '-'}<span>分</span></b></div><div class="fig"><small>着く予定</small><b>${hm(e.list[t.idx])}</b></div></div>
       <div class="sign-acts">
-        <button class="sa ${going ? '' : 'cur'}" data-a="nav">${IC.nav}<span>${going ? 'ナビを開く' : 'ナビ開始'}</span></button>
+        <button class="sa ${going ? '' : 'cur spin'}" data-a="nav">${IC.nav}<span>${going ? 'ナビを開く' : 'ナビ開始'}</span></button>
         <button class="sa ${going ? 'cur' : ''}" data-a="done">${IC.check}<span>配達完了</span></button>
       </div>
     </div>
@@ -1629,8 +1648,8 @@ function vGoLand(t, e){
   const nm = p ? p.name : (dep.name || '営業所') + 'へ戻る';
   const big = !id ? `<button class="btn primary l-big" data-a="navDepot">${IC.nav}ナビ開始</button>`
     : going ? `<button class="btn go l-big" data-a="${chain ? 'doneNav' : 'done'}">${IC.check}<span class="bt"><b>${chain ? '配達完了・次のナビへ' : '配達完了・次へ'}</b>${chain ? `<small>つぎ：${esc(nx ? nx.name : '営業所へ戻る')}</small>` : ''}</span></button>`
-    : `<button class="btn primary l-big" data-a="nav">${IC.nav}ナビ開始</button>`;
-  const acts = !id ? `<div class="l-acts two"><button class="btn" data-a="finish">便を終える</button><button class="btn" data-a="sheet" data-s="add">配達先を追加</button></div>`
+    : `<button class="btn primary l-big spin" data-a="nav">${IC.nav}ナビ開始</button>`;
+  const acts = !id ? `<div class="l-acts two endrow"><button class="btn" data-a="finish">${shiftName(t.shift)}の業務を終了する</button><button class="btn" data-a="sheet" data-s="add">追加</button></div>`
     : going ? `<div class="l-acts"><button class="btn danger" data-a="closedNow">閉まっていた</button><button class="btn" data-a="nav">ナビを開く</button><button class="btn" data-a="sheet" data-s="change">その他</button></div>`
     : `<div class="l-acts"><button class="btn" data-a="done">配達完了</button><button class="btn" data-a="later">1つ後に回す</button><button class="btn" data-a="sheet" data-s="change">その他</button></div>`;
   const x = exitInfo(t);
@@ -1744,7 +1763,12 @@ function vSet(){
 }
 
 /* ---------- 下から出るシート ---------- */
-function ask(titleText, msg, okLabel, fn){ S.confirm = { title: titleText, msg, ok: okLabel, fn }; S.sheet = 'confirm'; renderSheet(); }
+function ask(titleText, msg, okLabel, fn, opt){ S.confirm = Object.assign({ title: titleText, msg, ok: okLabel, fn }, opt || {}); S.sheet = 'confirm'; renderSheet(); }
+/* 便の終わり：必ず1回たずねてから終える */
+function askEnd(t){
+  const n = shiftName(t.shift), left = t.order ? t.order.length - t.idx : 0;
+  ask(n + 'の業務を終了しますか？', left ? `まだ ${left}件 残っています。終了すると、残りは配達していない記録になります。` : '記録を保存して、' + n + 'の便を終わります。', n + 'の業務を終了する', finishTrip, { plain: !left, cancel: 'まだ終わらない' });
+}
 function renderSheet(){
   const o = $('#overlay'); if (o.querySelector('.loading')) return;
   if (!S.sheet){ o.innerHTML = ''; return; }
@@ -1753,7 +1777,7 @@ function renderSheet(){
   const wrap = body => `<div class="sheet-bg" data-a="close"><div class="sheet">${top}${body}<button class="as-btn cancel" data-a="close">閉じる</button></div></div>`;
   if (S.sheet === 'confirm'){
     const c = S.confirm;
-    o.innerHTML = `<div class="sheet-bg" data-a="close"><div class="sheet">${top}<div class="card"><div class="ask"><b>${esc(c.title)}</b>${esc(c.msg)}</div><button class="as-btn danger" data-a="confirmOk">${esc(c.ok)}</button></div><button class="as-btn cancel" data-a="close">キャンセル</button></div></div>`;
+    o.innerHTML = `<div class="sheet-bg" data-a="close"><div class="sheet">${top}<div class="card"><div class="ask"><b>${esc(c.title)}</b>${esc(c.msg)}</div><button class="as-btn ${c.plain ? 'plain' : 'danger'}" data-a="confirmOk">${esc(c.ok)}</button></div><button class="as-btn cancel" data-a="close">${esc(c.cancel || 'キャンセル')}</button></div></div>`;
   } else if (S.sheet === 'stop'){
     const id = S.stopId, ctx = S.stopCtx, p = byId(id); if (!p){ S.sheet = null; o.innerHTML = ''; return; }
     const tr = ctx === 'reg' ? S.day.trips[S.shift] : ctx === 'rev' ? ((revDayObj().history || []).find(x => x.id === S.stopTrip) || t) : t, st = tr.stops.find(x => x.id === id) || {}, tg = tagsOf(p);
@@ -2022,7 +2046,7 @@ const ACT = {
   start: () => startTrip(),
   nav: () => { const t = curTrip(), p = byId(t.order[t.idx]); if (p) navTo(destText(p)); },
   navDepot: () => navTo(S.cfg.depot.lat + ',' + S.cfg.depot.lng),
-  finish: () => finishTrip(),
+  finish: () => askEnd(curTrip()),
   later: () => moveCurrent('後回し', false),
   laterLast: () => moveCurrent('最後に回す', true),
   rememberClosed: d => { const p = byId(d.id); if (p && !closedDays(p).includes(d.wd)) setTags(p, tagsOf(p).concat('午後休:' + d.wd)); toast(d.wd + '曜の午後休診として覚えました'); render(); },
@@ -2165,6 +2189,20 @@ async function applyDefaultDepot(){
     save(); toast('営業所を 沖縄東邦（西原町翁長）に設定しました'); render();
   }catch(e){}
 }
+
+/* ---------- キーボードを下げる ----------
+   検索して ＋ を押している間は出たまま。リストをスクロールするか、ほかの場所に触れると下がる。「検索」キーでも下がる */
+let kbY = null;
+const kbField = () => { const a = document.activeElement; return a && (a.id === 'q' || a.id === 'aq') ? a : null; };
+document.addEventListener('touchstart', e => {
+  const a = kbField(); kbY = null; if (!a || e.target.closest('.search')) return;
+  if (e.target.closest('.cand')) kbY = e.touches[0].clientY; else a.blur();
+}, { passive: true });
+document.addEventListener('touchmove', e => {
+  if (kbY == null || Math.abs(e.touches[0].clientY - kbY) < 12) return;
+  kbY = null; const a = kbField(); if (a) a.blur();
+}, { passive: true });
+document.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.target.id === 'q' || e.target.id === 'aq')) e.target.blur(); });
 
 /* ---------- 起動 ---------- */
 ensureToday();
